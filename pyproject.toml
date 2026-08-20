@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agents-browser"
+version = "0.42.0"
+description = "Ultra-fast, zero-bloat Minimal CDP Browser MCP in Python for AI coding agents"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+    { name = "Felix Kempf" },
+]
+requires-python = ">=3.10"
+dependencies = [
+    "mcp>=1.0.0,<2",
+    "websockets>=12.0",
+]
+keywords = ["mcp", "browser", "cdp", "chrome", "devtools", "agents", "coding-assistant", "scraper", "search"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Internet :: WWW/HTTP :: Browsers",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+[project.urls]
+Homepage = "https://github.com/Lolaplex/agents-browser"
+Repository = "https://github.com/Lolaplex/agents-browser"
+"Bug Tracker" = "https://github.com/Lolaplex/agents-browser/issues"
+
+[project.scripts]
+agents-browser = "agents_browser.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"agents_browser" = [
+    "bundled/**/*",
+]
