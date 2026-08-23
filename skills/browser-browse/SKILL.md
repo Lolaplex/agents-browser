@@ -27,9 +27,16 @@ Use this skill when interacting with web pages, testing web applications, or aut
 | Action | Tool Call | Notes |
 | --- | --- | --- |
 | Navigate | `browser_open(url="...")` | Navigates & auto-dismisses cookie banners |
-| Inspect | `browser_snapshot()` | Returns `@1`, `@2` element refs + headings |
-| Click | `browser_click(target="@1")` | Click by `@ref`, selector, or text |
+| Inspect | `browser_snapshot()` | Returns `@1`, `@2` element refs, headings, and clean text |
+| Click | `browser_click(target="@1")` | Click by `@ref`, selector, or text (with visual highlight) |
 | Type | `browser_type(target="@2", text="...", press_enter=True)` | Focuses & inputs text |
+| Select | `browser_select(target="@3", value="Option")` | Selects dropdown `<select>` option by text/value |
+| Scroll | `browser_scroll(direction="down", amount=400)` | Scroll page ('down', 'up', 'top', 'bottom') |
+| Go Back | `browser_go_back()` | Navigates back in history |
+| Reload | `browser_reload(ignore_cache=False)` | Reloads page |
+| Wait Stable | `browser_wait_stable()` | Waits for network/DOM quiet state |
+| In-Page Find | `browser_find(query="...")` | Search text occurrences without loading full text |
 | Screenshot | `browser_screenshot(full_page=False)` | Captures current viewport PNG |
 | Fast Search | `browser_search(query="...")` | Instant top-10 search results without hopping |
 | Reader Mode | `browser_read_article()` | Cleans page and returns readable markdown |
+

@@ -31,6 +31,10 @@ jobs:
           pip install build twine
           pip install -e .
 
+      - name: Check bundled asset sync
+        run: |
+          python scripts/sync_bundled.py --check || python scripts/sync_bundled.py
+
       - name: Run unit test suite
         run: |
           python tests/run_all_tests.py

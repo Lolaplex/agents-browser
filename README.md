@@ -1,7 +1,7 @@
 # agents-browser
 
 <p align="left">
-  <a href="https://github.com/Lolaplex/agents-browser/releases"><img src="https://img.shields.io/badge/version-0.42.0-blue.svg?style=flat-square" alt="Version 0.42.0"></a>
+  <a href="https://github.com/Lolaplex/agents-browser/releases"><img src="https://img.shields.io/badge/version-0.43.0-blue.svg?style=flat-square" alt="Version 0.43.0"></a>
   <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/MCP-Standard-orange.svg?style=flat-square" alt="MCP"></a>
   <a href="https://python.org"><img src="https://img.shields.io/badge/Python-3.10+-3776AB.svg?style=flat-square&logo=python&logoColor=white" alt="Python 3.10+"></a>
   <a href="https://pypi.org/project/agents-browser/"><img src="https://img.shields.io/pypi/v/agents-browser.svg?style=flat-square" alt="PyPI"></a>
@@ -10,6 +10,25 @@
 
 **Ultra-fast, zero-Node Python CDP Browser MCP for AI coding agents.**  
 Connects directly to your local Chrome, Edge, or Brave instance via native Chrome DevTools Protocol. Shared across **Cursor**, **Claude Code**, **Antigravity**, and **Zed**.
+
+---
+
+## Quickstart
+
+### 1-Step Setup
+
+```bash
+pip install agents-browser && agents-browser init
+```
+
+Scaffolds `~/.agents/browser/`, autowires MCP configurations into your installed IDEs, and registers assistant skills.
+
+> [!TIP]
+> **🤖 Agent-Driven Setup (Zero Friction):**  
+> Simply tell your coding agent: **"Install and set up agents-browser for me."**  
+> The agent installs the package, runs `agents-browser init`, and interacts with web applications, documentation, and search engines autonomously.
+
+*Source checkouts can also be installed and managed using [vand](https://github.com/Lolaplex/vand).*
 
 ---
 
@@ -24,7 +43,7 @@ Traditional browser automation MCPs (Playwright, Puppeteer) introduce massive fr
 **`agents-browser` connects directly to your installed browser via native CDP:**
 - **Zero Node.js / Zero 300MB Downloads:** Pure lightweight Python (`FastMCP` + `websockets`).
 - **Indexed `@ref` Interactive Snapshots:** Generates clean markdown with compact element references (`[@1] Button: Login`, `[@2] Input: Search`).
-- **High-Level Built-in Tools:** Web search, clean reader-mode extraction, table scraping, batch form filling.
+- **High-Level Built-in Tools:** Web search, clean reader-mode extraction, table scraping, batch form filling, dropdown selection, viewport scrolling, in-page search, and network/DOM stability detection.
 - **Persistent Sessions (`~/.agents/browser`):** Preserves cookies, sessions, and saved logins across turns.
 - **Universal Multi-IDE Auto-Config:** Plugs into Cursor, Antigravity, Claude Desktop, and Zed in 1 second.
 
@@ -61,23 +80,6 @@ Traditional browser automation MCPs (Playwright, Puppeteer) introduce massive fr
 
 ---
 
-## Quickstart
-
-### 1-Step Setup
-
-```bash
-pip install agents-browser && agents-browser init
-```
-
-Scaffolds `~/.agents/browser/`, autowires MCP configurations into your installed IDEs, and registers assistant skills.
-
-> [!TIP]
-> **🤖 Agent-Driven Setup (Zero Friction):**  
-> Simply tell your coding agent: **"Install and set up agents-browser for me."**  
-> The agent installs the package, runs `agents-browser init`, and interacts with web applications, documentation, and search engines autonomously.
-
----
-
 ## CLI Reference
 
 | Command | Purpose |
@@ -100,6 +102,12 @@ Scaffolds `~/.agents/browser/`, autowires MCP configurations into your installed
 | `browser_snapshot` | *None* | Extract clean text outline with indexed `@ref` element IDs (`@1`, `@2`). |
 | `browser_click` | `target` | Click element by `@ref` (e.g. `@1`), CSS selector, or matching text. |
 | `browser_type` | `target`, `text`, `clear`, `press_enter` | Focus and type text into input/textarea. |
+| `browser_select` | `target`, `value` | Select dropdown `<select>` option by text, value, or substring. |
+| `browser_scroll` | `direction` (`"down"`, `"up"`, `"top"`, `"bottom"`), `amount` | Scroll the active page viewport. |
+| `browser_go_back` | *None* | Navigate back in browser history. |
+| `browser_reload` | `ignore_cache` (default: `false`) | Reload active page (optional hard refresh). |
+| `browser_wait_stable` | `timeout_ms`, `quiet_ms` | Wait for network requests (fetch/XHR) and DOM mutations to settle. |
+| `browser_find` | `query`, `forward`, `match_case` | Fast in-page text search with match stats without dumping full page. |
 | `browser_search` | `query`, `engine` (default: `"duckduckgo"`) | Direct web search returning top organic results with Title, URL, and Snippet. |
 | `browser_read_article` | *None* | Extracts clean article markdown, stripping ads, navbars, and banners. |
 | `browser_scrape` | `selector`, `mode` (`"text"`, `"table"`, `"links"`) | Structured data extraction from CSS selector. |
@@ -127,7 +135,8 @@ Detailed architectural specifications live in [`abi/`](abi/):
 - [`abi/WHY.md`](abi/WHY.md) — Rationale & why CDP beats heavy Node.js frameworks.
 - [`abi/LAYOUT.md`](abi/LAYOUT.md) — Storage taxonomy in `~/.agents/browser/`.
 - [`abi/MCP.md`](abi/MCP.md) — Tool surface definitions and request/response contracts.
-- [`abi/CDP.md`](abi/CDP.md) — Chrome DevTools Protocol direct WebSocket implementation.
+- [`abi/TOOLS.md`](abi/TOOLS.md) — Exhaustive MCP tool reference & type signatures.
+- [`abi/PLATFORM.md`](abi/PLATFORM.md) — Multi-platform browser binary & profile resolution.
 
 ---
 

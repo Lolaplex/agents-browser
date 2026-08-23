@@ -173,6 +173,29 @@ class CDPClient:
         await self.call("Runtime.enable")
         await self.call("DOM.enable")
 
+        # CDP Network-level ad & tracker blocking
+        try:
+            await self.call("Network.enable")
+            await self.call("Network.setBlockedURLs", {
+                "urls": [
+                    "*doubleclick.net*",
+                    "*googlesyndication.com*",
+                    "*googleads.g.doubleclick.net*",
+                    "*adservice.google.*",
+                    "*youtube.com/pagead/*",
+                    "*youtube.com/api/stats/ads*",
+                    "*youtube.com/youtubei/v1/player/ad_break*",
+                    "*youtube.com/get_midroll_info*",
+                    "*adnxs.com*",
+                    "*scorecardresearch.com*",
+                    "*taboola.com*",
+                    "*outbrain.com*",
+                    "*criteo.com*",
+                ]
+            })
+        except Exception:
+            pass
+
     async def _listen_loop(self) -> None:
         try:
             async for raw in self.ws:
@@ -224,21 +247,39 @@ class CDPClient:
         return f"Navigated to {url} (Title: '{title_res}')"
 
     async def auto_dismiss_consent(self) -> Optional[str]:
-        """Automatically detect and click common cookie consent and GDPR banners."""
+        """Automatically detect and dismiss common cookie consent, GDPR overlays and backdrops."""
         js_code = """
         (() => {
             const commonSelectors = [
                 '#onetrust-accept-btn-handler',
+                '#onetrust-pc-btn-handler',
                 '#didomi-notice-agree-button',
                 '#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll',
                 '#CybotCookiebotDialogBodyButtonAccept',
                 '[data-testid="uc-accept-all-button"]',
                 '#uc-btn-accept-banner',
+                '#accept-cookies',
+                '#agree-cookie',
+                '#btn-cookie-accept',
                 '.qc-cmp2-summary-buttons button:first-child',
                 '.cmpboxbtn.cmpboxbtnyes',
+                '.cmpboxbtncustom',
+                '#sp-cc-accept',
+                '.fc-cta-consent',
+                '.fc-primary-button',
                 'button[aria-label="Alle akzeptieren"]',
+                'button[aria-label="Alles akzeptieren"]',
+                'button[aria-label="Zustimmen"]',
                 'button[aria-label="Accept all"]',
-                'button[aria-label="Agree"]'
+                'button[aria-label="Agree"]',
+                'button[aria-label="Allow all"]',
+                'button[aria-label="Schließen"]',
+                'button[aria-label="Close"]',
+                '.modal-close',
+                '.popup-close',
+                '[data-dismiss="modal"]',
+                'button.tcf-accept-all',
+                'button.save-preference-btn-handler'
             ];
 
             for (const sel of commonSelectors) {
@@ -252,31 +293,37 @@ class CDPClient:
             }
 
             const phrases = [
-                'akzeptieren und weiter',
-                'alle akzeptieren',
-                'alles akzeptieren',
-                'zustimmen und weiter',
-                'ich stimme zu',
-                'einverstanden',
-                'zustimmen',
-                'accept all',
-                'accept cookies',
-                'allow all',
-                'i agree',
-                'got it'
+                'akzeptieren und weiter', 'alle akzeptieren', 'alles akzeptieren',
+                'zustimmen und weiter', 'ich stimme zu', 'einverstanden', 'zustimmen',
+                'cookies akzeptieren', 'alle zulassen', 'zulassen', 'verstanden',
+                'accept all', 'accept cookies', 'allow all', 'i agree', 'got it', 'agree & continue',
+                'agree and continue', 'accept all cookies', 'continue without disabling'
             ];
-
             const buttons = Array.from(document.querySelectorAll('button, a, div[role="button"], input[type="button"], input[type="submit"]'));
             for (const btn of buttons) {
                 const txt = (btn.innerText || btn.value || '').trim().toLowerCase();
-                if (phrases.some(p => txt === p || txt.startsWith(p))) {
+                if (phrases.some(p => txt === p || txt.startsWith(p) || txt.includes(p))) {
                     const rect = btn.getBoundingClientRect();
-                    if (rect.width > 0 && rect.height > 0) {
+                    if (rect.width > 0 && rect.height > 0 && rect.top >= 0) {
                         btn.click();
                         return `Dismissed via text: "${txt}"`;
                     }
                 }
             }
+
+            try {
+                const blockers = document.querySelectorAll(
+                    '.fc-dialog-container, #onetrust-consent-sdk, .tcf-consent-modal, .modal-backdrop, .overlay-backdrop'
+                );
+                blockers.forEach(b => b.remove());
+                if (document.body && document.body.style.overflow === 'hidden') {
+                    document.body.style.overflow = 'auto';
+                }
+                if (document.documentElement && document.documentElement.style.overflow === 'hidden') {
+                    document.documentElement.style.overflow = 'auto';
+                }
+            } catch (e) {}
+
             return null;
         })()
         """
@@ -303,13 +350,27 @@ class CDPClient:
         return val.get("description", str(val))
 
     async def snapshot(self) -> str:
-        """Extract a structured text view of page + indexed interactive elements."""
+        """Extract a structured text view of page, headings, and interactive elements with index refs (@1, @2)."""
         await self.auto_dismiss_consent()
         js_code = """
         (() => {
+            if (!document.getElementById('__agents_browser_style__')) {
+                const style = document.createElement('style');
+                style.id = '__agents_browser_style__';
+                style.textContent = `
+                    .agents-target {
+                        outline: 2px solid #84cc16 !important;
+                        outline-offset: 2px !important;
+                        box-shadow: 0 0 12px rgba(132, 204, 22, 0.6) !important;
+                        transition: outline 0.15s ease, box-shadow 0.15s ease !important;
+                    }
+                `;
+                (document.head || document.documentElement).appendChild(style);
+            }
+
             window.__agents_refs = [];
             const result = {
-                title: document.title,
+                title: document.title || "Untitled",
                 url: window.location.href,
                 headings: [],
                 interactive: [],
@@ -319,50 +380,72 @@ class CDPClient:
             // Headings
             document.querySelectorAll('h1, h2, h3').forEach(h => {
                 const text = h.innerText?.trim();
-                if (text) result.headings.push(`${h.tagName}: ${text}`);
+                if (text && text.length < 120) result.headings.push(`${h.tagName}: ${text}`);
             });
 
-            // Interactive elements
+            // Interactive elements & rich web components
             const candidates = document.querySelectorAll(
-                'a, button, input, select, textarea, [role="button"], [role="link"], [role="checkbox"], [tabindex="0"]'
+                'a[href], button, input, select, textarea, video, iframe, [role="button"], [role="link"], [role="checkbox"], [tabindex="0"], ytd-rich-item-renderer, ytd-video-renderer, ytd-compact-video-renderer'
             );
 
             let refCount = 1;
+            const seenEls = new Set();
             candidates.forEach(el => {
-                const rect = el.getBoundingClientRect();
-                const visible = rect.width > 0 && rect.height > 0 && window.getComputedStyle(el).visibility !== 'hidden';
+                if (seenEls.has(el)) return;
+
+                // Resolve YouTube/WebComponent containers to actual video link
+                let target = el;
+                if (/^yt[d]-/.test(el.tagName.toLowerCase())) {
+                    const link = el.querySelector('a#video-title-link, a#video-title, a[href*="/watch"], a[href*="/results"]') || el.querySelector('a[href]');
+                    if (!link) return;
+                    target = link;
+                    seenEls.add(el);
+                }
+
+                const rect = target.getBoundingClientRect();
+                const visible = rect.width > 0 && rect.height > 0 && window.getComputedStyle(target).visibility !== 'hidden';
                 if (!visible) return;
 
-                window.__agents_refs[refCount] = el;
-                const tag = el.tagName.toLowerCase();
+                window.__agents_refs[refCount] = target;
+                const tag = target.tagName.toLowerCase();
                 let desc = "";
 
-                if (tag === 'a') {
-                    desc = `Link: "${el.innerText?.trim() || el.title || el.getAttribute('aria-label') || 'link'}" -> ${el.getAttribute('href') || ''}`;
-                } else if (tag === 'button' || el.getAttribute('role') === 'button') {
-                    desc = `Button: "${el.innerText?.trim() || el.getAttribute('aria-label') || el.value || 'button'}"`;
+                if (tag === 'video') {
+                    desc = `Video-Player: ${target.currentSrc || target.src || 'HTML5 Video'}`;
+                } else if (tag === 'iframe') {
+                    const title = target.title || target.getAttribute('aria-label') || target.src || '';
+                    desc = `Frame/Video: "${title.slice(0, 60)}"`;
+                } else if (tag === 'a') {
+                    const text = (target.innerText || target.title || target.getAttribute('aria-label') || '').trim();
+                    const href = target.href || target.getAttribute('href') || '';
+                    desc = `Link: "${text.slice(0, 80)}"${href ? ' -> ' + href : ''}`;
+                } else if (tag === 'button' || target.getAttribute('role') === 'button') {
+                    const text = (target.innerText || target.getAttribute('aria-label') || target.value || '').trim();
+                    desc = `Button: "${text.slice(0, 60)}"`;
                 } else if (tag === 'input') {
-                    const type = el.type || 'text';
-                    const ph = el.placeholder ? ` placeholder="${el.placeholder}"` : '';
-                    const val = el.value ? ` value="${el.value}"` : '';
+                    const type = target.type || 'text';
+                    const ph = target.placeholder ? ` placeholder="${target.placeholder}"` : '';
+                    const val = target.value ? ` value="${target.value}"` : '';
                     desc = `Input[${type}]: ${ph}${val}`;
                 } else if (tag === 'textarea') {
-                    const ph = el.placeholder ? ` placeholder="${el.placeholder}"` : '';
-                    desc = `Textarea: ${ph} (value: "${el.value || ''}")`;
+                    const ph = target.placeholder ? ` placeholder="${target.placeholder}"` : '';
+                    desc = `Textarea: ${ph} (value: "${target.value || ''}")`;
                 } else if (tag === 'select') {
-                    const sel = el.selectedOptions[0]?.text || '';
+                    const sel = target.selectedOptions[0]?.text || '';
                     desc = `Select: current="${sel}"`;
                 } else {
-                    desc = `${tag}: "${el.innerText?.trim() || ''}"`;
+                    const text = (target.innerText || target.title || target.getAttribute('aria-label') || '').trim();
+                    desc = `${tag}: "${text.slice(0, 60)}"`;
                 }
 
                 result.interactive.push(`[@${refCount}] ${desc}`);
                 refCount++;
             });
 
-            // Main body text preview
+            // Main body text preview — filter repetitive navigation/footer boilerplate
             const bodyText = document.body?.innerText || "";
-            result.textSnippet = bodyText.split('\\n').map(s => s.trim()).filter(Boolean).slice(0, 20).join('\\n');
+            const skipRe = /^(suchen|search|startseite|abonnements|you|verlauf|wiedergabelisten|kanal|themen|einstellungen|beschwerde|hilfe|über|presse|urheberrecht|kontakt|creator|werben|entwickler|bedingungen|datenschutz|richtlinie|sicherheit|funktionen|tests|©|\\d{4})$/i;
+            result.textSnippet = bodyText.split('\\n').map(s => s.trim()).filter(Boolean).filter(s => !skipRe.test(s)).slice(0, 30).join('\\n');
 
             return result;
         })()
@@ -384,7 +467,7 @@ class CDPClient:
             lines.append("")
 
         if data.get("interactive"):
-            lines.append("### Interactive Elements (use ref like '@1' or CSS selector)")
+            lines.append("### Interactive Elements (use ref like '@1', CSS selector, or visible text)")
             for item in data["interactive"]:
                 lines.append(f"- {item}")
             lines.append("")
@@ -416,13 +499,20 @@ class CDPClient:
             }}
 
             if (!el) {{
-                // Search by text content
-                const all = document.querySelectorAll('button, a, input[type=button], input[type=submit], [role=button], span, div');
-                for (const candidate of all) {{
-                    if (candidate.innerText?.trim().toLowerCase() === t.toLowerCase() || candidate.value?.trim().toLowerCase() === t.toLowerCase()) {{
-                        el = candidate;
-                        break;
+                // Search by text content: prioritize actionable elements first
+                const lower = t.toLowerCase();
+                const linkSelectors = 'a[href], button, input[type=button], input[type=submit], [role=button], [role=link]';
+                for (const sel of [linkSelectors, 'h1, h2, h3, p, span, div']) {{
+                    for (const candidate of document.querySelectorAll(sel)) {{
+                        const txt = (candidate.innerText || candidate.value || '').trim().toLowerCase();
+                        if (!txt || txt.length > 200) continue;
+                        if (txt === lower || txt.includes(lower)) {{
+                            const inner = candidate.querySelector && candidate.querySelector('a[href]');
+                            el = inner || candidate;
+                            break;
+                        }}
                     }}
+                    if (el) break;
                 }}
             }}
 
@@ -430,7 +520,16 @@ class CDPClient:
                 return `Element not found for target: '${{t}}'`;
             }}
 
-            el.scrollIntoView({{behavior: 'instant', block: 'center', inline: 'center'}});
+            el.scrollIntoView({{behavior: 'smooth', block: 'center', inline: 'center'}});
+            el.classList.add('agents-target');
+            setTimeout(() => el.classList.remove('agents-target'), 800);
+
+            if (el.tagName === 'VIDEO') {{
+                try {{
+                    if (el.paused) el.play(); else el.pause();
+                }} catch (e) {{}}
+            }}
+
             el.focus?.();
             el.dispatchEvent(new MouseEvent('mousedown', {{bubbles: true, cancelable: true}}));
             el.dispatchEvent(new MouseEvent('mouseup', {{bubbles: true, cancelable: true}}));
@@ -469,10 +568,11 @@ class CDPClient:
                 return `Input element not found: '${{t}}'`;
             }}
 
-            el.scrollIntoView({{behavior: 'instant', block: 'center'}});
+            el.scrollIntoView({{behavior: 'smooth', block: 'center'}});
+            el.classList.add('agents-target');
+            setTimeout(() => el.classList.remove('agents-target'), 800);
             el.focus();
 
-            // Append / set value and trigger input events
             const proto = (el instanceof HTMLTextAreaElement) ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
             const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
 
@@ -504,6 +604,171 @@ class CDPClient:
         """
         res = await self.evaluate(js_code)
         await asyncio.sleep(0.5)
+        return str(res)
+
+    async def select(self, target: str, value: str) -> str:
+        """Select an option in a <select> element by option value, exact text, or substring."""
+        js_code = f"""
+        (() => {{
+            const t = {json.dumps(target.strip())};
+            const val = {json.dumps(value.strip())};
+            let el = null;
+
+            if (t.startsWith('@')) {{
+                const idx = parseInt(t.slice(1), 10);
+                if (window.__agents_refs && window.__agents_refs[idx]) {{
+                    el = window.__agents_refs[idx];
+                }}
+            }}
+
+            if (!el) {{
+                try {{
+                    el = document.querySelector(t);
+                }} catch (e) {{}}
+            }}
+
+            if (!el) return `Select element not found for target: '${{t}}'`;
+            if (el.tagName !== 'SELECT') return `Element is not a <select>: <${{el.tagName.toLowerCase()}}>`;
+
+            el.scrollIntoView({{behavior: 'smooth', block: 'center'}});
+            el.classList.add('agents-target');
+            setTimeout(() => el.classList.remove('agents-target'), 800);
+
+            const wanted = val.toLowerCase();
+            let opt = Array.from(el.options).find(o => o.value.toLowerCase() === wanted)
+                || Array.from(el.options).find(o => o.text.trim().toLowerCase() === wanted)
+                || Array.from(el.options).find(o => o.text.trim().toLowerCase().includes(wanted));
+
+            if (!opt) {{
+                const opts = Array.from(el.options).map(o => o.text.trim()).slice(0, 20).join(' | ');
+                return `Option '${{val}}' not found. Available options: ${{opts}}`;
+            }}
+
+            el.value = opt.value;
+            el.dispatchEvent(new Event('input', {{bubbles: true}}));
+            el.dispatchEvent(new Event('change', {{bubbles: true}}));
+            return `Selected in '${{t}}': "${{opt.text.trim()}}" (value="${{opt.value}}")`;
+        }})()
+        """
+        res = await self.evaluate(js_code)
+        await asyncio.sleep(0.3)
+        return str(res)
+
+    async def scroll(self, direction: str = "down", amount: int = 400) -> str:
+        """Scroll the page smoothly in given direction ('down', 'up', 'top', 'bottom')."""
+        js_code = f"""
+        (() => {{
+            const dir = {json.dumps(direction.lower())};
+            const px = {int(amount)};
+
+            if (dir === 'top') {{
+                window.scrollTo({{top: 0, behavior: 'smooth'}});
+                return 'Scrolled to top';
+            }}
+            if (dir === 'bottom') {{
+                window.scrollTo({{top: document.body.scrollHeight, behavior: 'smooth'}});
+                return 'Scrolled to bottom';
+            }}
+
+            const dy = dir === 'up' ? -px : px;
+            window.scrollBy({{top: dy, behavior: 'smooth'}});
+            return `Scrolled ${{dir}} by ${{px}}px`;
+        }})()
+        """
+        res = await self.evaluate(js_code)
+        await asyncio.sleep(0.3)
+        return str(res)
+
+    async def go_back(self) -> str:
+        """Navigate back in browser history."""
+        js_code = """
+        (() => {
+            if (window.history.length <= 1) return 'No history entry to go back to';
+            window.history.back();
+            return 'Navigated back';
+        })()
+        """
+        res = await self.evaluate(js_code)
+        await asyncio.sleep(0.8)
+        return str(res)
+
+    async def reload(self, ignore_cache: bool = False) -> str:
+        """Reload current page."""
+        await self.call("Page.reload", {"ignoreCache": ignore_cache})
+        await asyncio.sleep(1.0)
+        return "Page reloaded"
+
+    async def wait_stable(self, timeout_ms: int = 8000, quiet_ms: int = 500) -> str:
+        """Wait until network requests and DOM mutations settle."""
+        js_code = f"""
+        (() => {{
+            return new Promise((resolve) => {{
+                const start = Date.now();
+                let lastActivity = Date.now();
+                const timeout = {int(timeout_ms)};
+                const quiet = {int(quiet_ms)};
+
+                const origFetch = window.fetch;
+                let fetchCount = 0;
+                window.fetch = function(...args) {{
+                    fetchCount++;
+                    lastActivity = Date.now();
+                    return origFetch.apply(this, args).finally(() => {{
+                        lastActivity = Date.now();
+                        fetchCount--;
+                    }});
+                }};
+
+                const obs = new MutationObserver(() => {{
+                    lastActivity = Date.now();
+                }});
+                obs.observe(document.documentElement, {{childList: true, subtree: true, attributes: true}});
+
+                const tick = () => {{
+                    const now = Date.now();
+                    const isQuiet = now - lastActivity >= quiet && fetchCount === 0;
+                    if (isQuiet || now - start >= timeout) {{
+                        obs.disconnect();
+                        window.fetch = origFetch;
+                        resolve(isQuiet ? 'Page stable' : `Timeout after ${{timeout}}ms`);
+                        return;
+                    }}
+                    setTimeout(tick, 150);
+                }};
+                setTimeout(tick, quiet);
+            }});
+        }})()
+        """
+        res = await self.evaluate(js_code)
+        return str(res)
+
+    async def find_in_page(self, query: str, forward: bool = True, match_case: bool = False) -> str:
+        """Search text in page using window.find and return match stats."""
+        js_code = f"""
+        (() => {{
+            const query = {json.dumps(query)};
+            const forward = {json.dumps(forward)};
+            const matchCase = {json.dumps(match_case)};
+
+            if (!query) return JSON.stringify({{found: false, total: 0}});
+
+            let total = 0;
+            try {{
+                const escaped = query.replace(/[.*+?^${{}}()|[\\]\\\\]/g, "\\\\$&");
+                const flags = matchCase ? "g" : "gi";
+                const m = (document.body?.innerText || "").match(new RegExp(escaped, flags));
+                total = m ? m.length : 0;
+            }} catch (e) {{}}
+
+            let found = false;
+            try {{
+                found = window.find(query, matchCase, !forward, true, false, false, false);
+            }} catch (e) {{}}
+
+            return JSON.stringify({{found: !!found, total: total, query: query}});
+        }})()
+        """
+        res = await self.evaluate(js_code)
         return str(res)
 
     async def screenshot(self, full_page: bool = False) -> str:
@@ -705,3 +970,4 @@ class CDPClient:
         if self.proc:
             self.proc.terminate()
             self.proc = None
+

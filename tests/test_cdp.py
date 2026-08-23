@@ -30,7 +30,20 @@ async def run_test():
         links_md = await client.scrape(selector=".infobox", mode="links")
         print("Scraped Links snippet:\n", links_md[:200])
 
-        print("\n4. Testing Full-page Screenshot...")
+        # 4. Test Scroll & In-Page Find
+        print("\n4. Testing Scroll and In-Page Find...")
+        scroll_res = await client.scroll("down", 500)
+        assert "Scrolled" in scroll_res
+        find_res = await client.find_in_page("Guido")
+        assert "Guido" in find_res
+
+        # 5. Test Wait Stable
+        print("\n5. Testing Wait Stable...")
+        stable_res = await client.wait_stable(timeout_ms=3000, quiet_ms=200)
+        assert "stable" in stable_res.lower() or "timeout" in stable_res.lower()
+
+        # 6. Test Screenshot
+        print("\n6. Testing Full-page Screenshot...")
         b64 = await client.screenshot(full_page=False)
         assert len(b64) > 1000
 
@@ -41,3 +54,4 @@ async def run_test():
 
 if __name__ == "__main__":
     asyncio.run(run_test())
+

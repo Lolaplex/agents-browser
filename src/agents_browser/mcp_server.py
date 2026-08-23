@@ -107,6 +107,91 @@ async def browser_tabs() -> str:
 
 
 @mcp.tool()
+async def browser_select(target: str, value: str) -> str:
+    """Select an option in a dropdown (<select>) element by option value, text, or substring match.
+
+    Parameters:
+    - target: Ref index (e.g. '@2'), CSS selector, or matching text of the select element.
+    - value: Desired option value, full text, or partial text.
+    """
+    try:
+        client = get_client()
+        return await client.select(target, value)
+    except Exception as e:
+        return f"Error selecting option: {e}"
+
+
+@mcp.tool()
+async def browser_scroll(direction: str = "down", amount: int = 400) -> str:
+    """Scroll the active browser page.
+
+    Parameters:
+    - direction: 'down', 'up', 'top', or 'bottom'
+    - amount: Pixel distance to scroll (for 'down'/'up', default 400).
+    """
+    try:
+        client = get_client()
+        return await client.scroll(direction=direction, amount=amount)
+    except Exception as e:
+        return f"Error scrolling: {e}"
+
+
+@mcp.tool()
+async def browser_go_back() -> str:
+    """Navigate back in browser history."""
+    try:
+        client = get_client()
+        return await client.go_back()
+    except Exception as e:
+        return f"Error navigating back: {e}"
+
+
+@mcp.tool()
+async def browser_reload(ignore_cache: bool = False) -> str:
+    """Reload the current browser page.
+
+    Parameters:
+    - ignore_cache: If true, forces a hard refresh ignoring browser cache.
+    """
+    try:
+        client = get_client()
+        return await client.reload(ignore_cache=ignore_cache)
+    except Exception as e:
+        return f"Error reloading page: {e}"
+
+
+@mcp.tool()
+async def browser_wait_stable(timeout_ms: int = 8000, quiet_ms: int = 500) -> str:
+    """Wait for network requests (fetch/XHR) and DOM mutations to settle before continuing.
+
+    Parameters:
+    - timeout_ms: Maximum wait time in milliseconds (default 8000).
+    - quiet_ms: Quiet duration in milliseconds required to consider page stable (default 500).
+    """
+    try:
+        client = get_client()
+        return await client.wait_stable(timeout_ms=timeout_ms, quiet_ms=quiet_ms)
+    except Exception as e:
+        return f"Error waiting for stability: {e}"
+
+
+@mcp.tool()
+async def browser_find(query: str, forward: bool = True, match_case: bool = False) -> str:
+    """Search for text in page and return match stats and highlight position.
+
+    Parameters:
+    - query: Search text string.
+    - forward: Search forward (True) or backward (False).
+    - match_case: Case-sensitive search flag.
+    """
+    try:
+        client = get_client()
+        return await client.find_in_page(query=query, forward=forward, match_case=match_case)
+    except Exception as e:
+        return f"Error searching text: {e}"
+
+
+@mcp.tool()
 async def browser_switch_tab(tab_id: str) -> str:
     """Switch active focus to a specific tab ID from browser_tabs."""
     try:
@@ -114,6 +199,7 @@ async def browser_switch_tab(tab_id: str) -> str:
         return await client.switch_tab(tab_id)
     except Exception as e:
         return f"Error switching tab: {e}"
+
 
 
 # --- High-Level Built-in Scraper & Search Tools ---

@@ -1,0 +1,6 @@
+version: 1
+install:
+  - python -m pip install -e .
+  - agents-browser init
+update: python -m pip install -e .
+verify: python tests/run_all_tests.py
