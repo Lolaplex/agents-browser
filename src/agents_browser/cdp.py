@@ -127,17 +127,48 @@ class CDPClient:
         self._listener_task: Optional[asyncio.Task] = None
         self._current_target_id: Optional[str] = None
 
-    def _is_server_ready(self) -> bool:
+    def _get_server_info(self) -> Optional[Dict[str, Any]]:
         try:
             url = f"http://{self.host}:{self.port}/json/version"
             with urllib.request.urlopen(url, timeout=1.0) as resp:
-                return resp.status == 200
+                if resp.status == 200:
+                    return json.loads(resp.read().decode("utf-8"))
         except Exception:
+            pass
+        return None
+
+    def _is_server_ready(self) -> bool:
+        info = self._get_server_info()
+        if not info:
             return False
+        if self.headless is not None:
+            ua = info.get("User-Agent", "")
+            is_headless = "HeadlessChrome" in ua
+            if is_headless != self.headless:
+                return False
+        return True
+
+    def _close_existing_server(self) -> None:
+        info = self._get_server_info()
+        if not info:
+            return
+        ws_url = info.get("webSocketDebuggerUrl")
+        if ws_url:
+            try:
+                import websockets.sync.client as ws_sync
+                with ws_sync.connect(ws_url, close_timeout=1.0) as s:
+                    s.send(json.dumps({"id": 1, "method": "Browser.close"}))
+            except Exception:
+                pass
+        time.sleep(0.5)
 
     def ensure_browser_running(self) -> None:
         if self._is_server_ready():
             return
+
+        # If an existing browser is running on port with wrong mode (e.g. visible window), close it
+        if self._get_server_info() is not None:
+            self._close_existing_server()
 
         self.user_data_dir.mkdir(parents=True, exist_ok=True)
         exe = find_browser_executable()
