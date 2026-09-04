@@ -11,3 +11,7 @@
 
 3. **Deterministic `@ref` UI Indexing**:
    - Rather than dumping 100k tokens of raw HTML or forcing the LLM to write CSS selectors, `browser_snapshot()` indexes interactive elements (`[@1] Link`, `[@2] Button`) for effortless one-token interactions.
+
+4. **Headless by Default, Visible on Demand**:
+   - Automation runs with Chromium `--headless=new` so agents do not spawn desktop windows by default.
+   - A visible CDP window (`visible=True` / `browser_set_headless(False)`) or the user's personal OS browser (`browser_system_open`) stays available when the human explicitly asks.

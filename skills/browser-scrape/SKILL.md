@@ -1,11 +1,13 @@
 ---
 name: browser-scrape
-description: Extract structured data, clean reader-mode markdown, search results, and batch-fill forms via agents-browser MCP without writing custom ad-hoc scraping scripts.
+description: Extract structured data, clean reader-mode markdown, search results, and batch-fill forms via agents-browser MCP without writing custom ad-hoc scraping scripts. Runs headless by default.
 ---
 
 # Browser Scrape & Search Skill
 
 Use this skill for web information retrieval, structured table extraction, search queries, and form automation.
+
+**Headless is default.** Do not call `visible=True` or `browser_system_open` unless the human explicitly asks for a desktop window.
 
 ## High-Level Operations
 

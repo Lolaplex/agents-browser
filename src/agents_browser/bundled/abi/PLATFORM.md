@@ -20,4 +20,11 @@
 - `google-chrome`, `google-chrome-stable`, `chromium`, `chromium-browser`, `microsoft-edge`, `brave-browser`
 
 ## Overrides
-Set environment variable `CHROME_PATH` or `BROWSER_PATH` to explicitly point to a custom binary.
+| Variable | Purpose |
+| --- | --- |
+| `AGENTS_BROWSER_BIN` / `CHROME_PATH` / `BROWSER_PATH` | Explicit path to Chromium binary |
+| `AGENTS_BROWSER_HEADLESS` | `1` (default) = headless; `0` / `false` / `no` = visible window |
+
+## Launch Flags (managed)
+- Always: `--remote-debugging-port=9222`, `--user-data-dir=~/.agents/browser`, `--no-first-run`, `--window-size=1280,900`
+- Headless: `--headless=new`, `--disable-gpu`, `--mute-audio`, `--hide-scrollbars`

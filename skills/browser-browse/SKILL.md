@@ -1,11 +1,19 @@
 ---
 name: browser-browse
-description: Control local Chrome/Edge browser via agents-browser MCP. Navigate, take interactive snapshots with @ref IDs, click, type, and screenshot without Playwright or heavy Node overhead.
+description: Control local Chrome/Edge browser via agents-browser MCP. Headless CDP by default. Navigate, take interactive snapshots with @ref IDs, click, type, and screenshot without Playwright or heavy Node overhead.
 ---
 
 # Browser Browse Skill
 
 Use this skill when interacting with web pages, testing web applications, or automating browser tasks using `agents-browser`.
+
+## Headless Default (Critical)
+
+- **Default mode is headless** (`--headless=new`). All CDP tools work without a visible window.
+- Do **not** open a visible browser unless the human explicitly asks (e.g. "zeig Fenster", "visible", "open in my browser").
+- Stay headless for automate / scrape / search / snapshot / screenshot / click / type.
+- Visible CDP window only via `browser_open(url, visible=True)` or `browser_set_headless(False)`.
+- Personal OS browser (Floorp/Firefox/Chrome with their cookies) only via `browser_system_open(url)` when human asks to open in *their* desktop browser.
 
 ## Strict Execution Principles (Anti-Loop & Fast Execution)
 
@@ -26,9 +34,12 @@ Use this skill when interacting with web pages, testing web applications, or aut
 
 | Action | Tool Call | Notes |
 | --- | --- | --- |
-| Navigate | `browser_open(url="...")` | Navigates & auto-dismisses cookie banners |
+| Navigate (headless) | `browser_open(url="...")` | Default. No window. Auto-dismisses cookies |
+| Navigate (visible) | `browser_open(url="...", visible=True)` | Only if human asks for a window |
+| System browser | `browser_system_open(url="...")` | OS default browser; only on explicit ask |
+| Toggle mode | `browser_set_headless(True\|False)` | Restart CDP browser headless/visible |
 | Inspect | `browser_snapshot()` | Returns `@1`, `@2` element refs, headings, and clean text |
-| Click | `browser_click(target="@1")` | Click by `@ref`, selector, or text (with visual highlight) |
+| Click | `browser_click(target="@1")` | Click by `@ref`, selector, or text |
 | Type | `browser_type(target="@2", text="...", press_enter=True)` | Focuses & inputs text |
 | Select | `browser_select(target="@3", value="Option")` | Selects dropdown `<select>` option by text/value |
 | Scroll | `browser_scroll(direction="down", amount=400)` | Scroll page ('down', 'up', 'top', 'bottom') |
@@ -36,7 +47,6 @@ Use this skill when interacting with web pages, testing web applications, or aut
 | Reload | `browser_reload(ignore_cache=False)` | Reloads page |
 | Wait Stable | `browser_wait_stable()` | Waits for network/DOM quiet state |
 | In-Page Find | `browser_find(query="...")` | Search text occurrences without loading full text |
-| Screenshot | `browser_screenshot(full_page=False)` | Captures current viewport PNG |
+| Screenshot | `browser_screenshot(full_page=False)` | Captures current viewport PNG (works headless) |
 | Fast Search | `browser_search(query="...")` | Instant top-10 search results without hopping |
 | Reader Mode | `browser_read_article()` | Cleans page and returns readable markdown |
-

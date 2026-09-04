@@ -1,7 +1,7 @@
 # agents-browser
 
 <p align="left">
-  <a href="https://github.com/Lolaplex/agents-browser/releases"><img src="https://img.shields.io/badge/version-0.43.0-blue.svg?style=flat-square" alt="Version 0.43.0"></a>
+  <a href="https://github.com/Lolaplex/agents-browser/releases"><img src="https://img.shields.io/badge/version-0.44.0-blue.svg?style=flat-square" alt="Version 0.44.0"></a>
   <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/MCP-Standard-orange.svg?style=flat-square" alt="MCP"></a>
   <a href="https://python.org"><img src="https://img.shields.io/badge/Python-3.10+-3776AB.svg?style=flat-square&logo=python&logoColor=white" alt="Python 3.10+"></a>
   <a href="https://pypi.org/project/agents-browser/"><img src="https://img.shields.io/pypi/v/agents-browser.svg?style=flat-square" alt="PyPI"></a>
@@ -9,7 +9,7 @@
 </p>
 
 **Ultra-fast, zero-Node Python CDP Browser MCP for AI coding agents.**  
-Connects directly to your local Chrome, Edge, or Brave instance via native Chrome DevTools Protocol. Shared across **Cursor**, **Claude Code**, **Antigravity**, and **Zed**.
+Connects directly to your local Chrome, Edge, or Brave instance via native Chrome DevTools Protocol. **Headless by default.** Shared across **Cursor**, **Claude Code**, **Antigravity**, and **Zed**.
 
 ---
 
@@ -41,6 +41,7 @@ Traditional browser automation MCPs (Playwright, Puppeteer) introduce massive fr
 - Dump 100k+ tokens of raw bloated HTML into LLM context windows
 
 **`agents-browser` connects directly to your installed browser via native CDP:**
+- **Headless by Default:** Silent `--headless=new` background automation. Visible window only on explicit ask.
 - **Zero Node.js / Zero 300MB Downloads:** Pure lightweight Python (`FastMCP` + `websockets`).
 - **Indexed `@ref` Interactive Snapshots:** Generates clean markdown with compact element references (`[@1] Button: Login`, `[@2] Input: Search`).
 - **High-Level Built-in Tools:** Web search, clean reader-mode extraction, table scraping, batch form filling, dropdown selection, viewport scrolling, in-page search, and network/DOM stability detection.
@@ -65,7 +66,7 @@ Traditional browser automation MCPs (Playwright, Puppeteer) introduce massive fr
                                 │  Direct CDP Commands
                                 ▼
  ┌─────────────────────────────────────────────────────────────┐
- │              LOCAL BROWSER (Chrome / Edge / Brave)          │
+ │     LOCAL BROWSER (Chrome / Edge / Brave) — headless=new    │
  │    Persistent Profile: ~/.agents/browser                    │
  └──────────────┬───────────────────────────────┬──────────────┘
                 │                               │
@@ -85,7 +86,8 @@ Traditional browser automation MCPs (Playwright, Puppeteer) introduce massive fr
 | Command | Purpose |
 |---------|---------|
 | `agents-browser init` | Plug & Play setup: auto-configures MCP across Cursor, Antigravity, Claude Desktop, Zed |
-| `agents-browser open <URL>` | Navigates the browser to the specified URL |
+| `agents-browser open <URL>` | Navigates headless (add `--visible` for a desktop window) |
+| `agents-browser system-open <URL>` | Opens URL in the OS default desktop browser |
 | `agents-browser search "<query>"` | Performs a web search and prints top 10 organic markdown results |
 | `agents-browser read` | Extracts active web page in clean Reader Mode |
 | `agents-browser snapshot` | Captures text outline with compact indexed `@ref` interactive elements |
@@ -98,7 +100,9 @@ Traditional browser automation MCPs (Playwright, Puppeteer) introduce massive fr
 
 | Tool | Parameters | Description |
 | :--- | :--- | :--- |
-| `browser_open` | `url`, `new_tab` (default: `false`) | Navigate active tab or spawn a new tab. |
+| `browser_open` | `url`, `new_tab`, `visible` (default: `false`) | Navigate headless by default; set `visible=True` only when asked for a window. |
+| `browser_system_open` | `url` | Open URL in the user's personal OS default browser (no CDP). |
+| `browser_set_headless` | `headless` (default: `true`) | Restart CDP browser in headless or visible mode. |
 | `browser_snapshot` | *None* | Extract clean text outline with indexed `@ref` element IDs (`@1`, `@2`). |
 | `browser_click` | `target` | Click element by `@ref` (e.g. `@1`), CSS selector, or matching text. |
 | `browser_type` | `target`, `text`, `clear`, `press_enter` | Focus and type text into input/textarea. |
@@ -112,7 +116,7 @@ Traditional browser automation MCPs (Playwright, Puppeteer) introduce massive fr
 | `browser_read_article` | *None* | Extracts clean article markdown, stripping ads, navbars, and banners. |
 | `browser_scrape` | `selector`, `mode` (`"text"`, `"table"`, `"links"`) | Structured data extraction from CSS selector. |
 | `browser_fill_form` | `fields_json`, `submit_selector` | Batch fill form fields and submit in one call. |
-| `browser_screenshot` | `full_page` (default: `false`) | Capture PNG screenshot as base64. |
+| `browser_screenshot` | `full_page` (default: `false`) | Capture PNG screenshot as base64 (works headless). |
 | `browser_evaluate` | `script` | Execute arbitrary JavaScript in tab context. |
 | `browser_tabs` | *None* | List active browser tabs with IDs and titles. |
 | `browser_switch_tab` | `tab_id` | Switch active tab focus. |

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agents-browser"
-version = "0.43.0"
+version = "0.44.0"
 description = "Ultra-fast, zero-bloat Minimal CDP Browser MCP in Python for AI coding agents"
 readme = "README.md"
 license = "MIT"
