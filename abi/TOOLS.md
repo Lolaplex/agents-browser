@@ -2,7 +2,9 @@
 
 | Tool | Signature | Purpose |
 | --- | --- | --- |
-| `browser_open` | `(url: str, new_tab: bool = False) -> str` | Navigates to a URL |
+| `browser_open` | `(url: str, new_tab: bool = False, visible: bool = False) -> str` | Navigates to a URL (headless by default, visible if requested) |
+| `browser_system_open` | `(url: str) -> str` | Opens URL in user's OS default desktop browser (Floorp, Firefox, Chrome, Edge) |
+| `browser_set_headless` | `(headless: bool = True) -> str` | Toggles background headless mode (True = background, False = window) |
 | `browser_snapshot` | `() -> str` | Captures structural text & indexed `@ref` interactive elements |
 | `browser_click` | `(target: str) -> str` | Clicks by `@ref` (e.g. `@1`), CSS selector, or visible text |
 | `browser_type` | `(target: str, text: str, clear: bool = False, press_enter: bool = False) -> str` | Types text into input or textarea |

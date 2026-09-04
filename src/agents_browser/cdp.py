@@ -19,12 +19,41 @@ import websockets
 
 
 def find_browser_executable() -> str:
-    """Find installed Chrome, Edge, or Brave on Windows, macOS, or Linux."""
-    custom = os.environ.get("CHROME_PATH") or os.environ.get("BROWSER_PATH")
+    """Find installed Chrome, Edge, Brave, Vivaldi, or other Chromium-based browser on Windows, macOS, or Linux."""
+    custom = os.environ.get("AGENTS_BROWSER_BIN") or os.environ.get("CHROME_PATH") or os.environ.get("BROWSER_PATH")
     if custom and os.path.exists(custom):
         return custom
 
     if sys.platform == "win32":
+        # 1. Inspect Windows Registry (HKCU and HKLM StartMenuInternet)
+        try:
+            import winreg
+
+            detected_registry: List[str] = []
+            for root in [winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE]:
+                try:
+                    k = winreg.OpenKey(root, r"SOFTWARE\Clients\StartMenuInternet")
+                    for i in range(winreg.QueryInfoKey(k)[0]):
+                        sub = winreg.EnumKey(k, i)
+                        try:
+                            cmd_k = winreg.OpenKey(k, rf"{sub}\shell\open\command")
+                            raw_val, _ = winreg.QueryValueEx(cmd_k, "")
+                            exe_path = raw_val.strip().strip('"')
+                            lower_exe = os.path.basename(exe_path).lower()
+                            if any(c in lower_exe for c in ["chrome", "msedge", "edge", "brave", "vivaldi", "comet", "chromium", "opera"]):
+                                if os.path.exists(exe_path) and exe_path not in detected_registry:
+                                    detected_registry.append(exe_path)
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+
+            if detected_registry:
+                return detected_registry[0]
+        except Exception:
+            pass
+
+        # 2. Check standard Windows candidate paths across environment locations
         candidates = [
             os.path.expandvars(r"%ProgramFiles%\Google\Chrome\Application\chrome.exe"),
             os.path.expandvars(r"%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe"),
@@ -33,13 +62,18 @@ def find_browser_executable() -> str:
             os.path.expandvars(r"%ProgramFiles%\Microsoft\Edge\Application\msedge.exe"),
             os.path.expandvars(r"%LOCALAPPDATA%\BraveSoftware\Brave-Browser\Application\brave.exe"),
             os.path.expandvars(r"%ProgramFiles%\BraveSoftware\Brave-Browser\Application\brave.exe"),
+            os.path.expandvars(r"%LOCALAPPDATA%\Vivaldi\Application\vivaldi.exe"),
+            os.path.expandvars(r"%LOCALAPPDATA%\Chromium\Application\chrome.exe"),
+            os.path.expandvars(r"%LOCALAPPDATA%\Perplexity\Comet\Application\comet.exe"),
         ]
     elif sys.platform == "darwin":
         candidates = [
             "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
             "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
             "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+            "/Applications/Vivaldi.app/Contents/MacOS/Vivaldi",
             "/Applications/Chromium.app/Contents/MacOS/Chromium",
+            "/Applications/Arc.app/Contents/MacOS/Arc",
         ]
     else:
         candidates = [
@@ -51,6 +85,7 @@ def find_browser_executable() -> str:
                 "chromium-browser",
                 "microsoft-edge",
                 "brave-browser",
+                "vivaldi",
             ]
             if shutil.which(b)
         ]
@@ -59,7 +94,7 @@ def find_browser_executable() -> str:
         if path and os.path.exists(path):
             return path
 
-    raise RuntimeError("No Chrome/Edge/Brave browser found on system. Set CHROME_PATH.")
+    raise RuntimeError("No Chromium-based browser (Chrome, Edge, Brave, Vivaldi) found on system. Set AGENTS_BROWSER_BIN or CHROME_PATH.")
 
 
 class CDPClient:
@@ -70,7 +105,7 @@ class CDPClient:
         host: str = "127.0.0.1",
         port: int = 9222,
         user_data_dir: Optional[str] = None,
-        headless: bool = False,
+        headless: Optional[bool] = None,
     ):
         self.host = host
         self.port = port
@@ -79,7 +114,12 @@ class CDPClient:
             if user_data_dir
             else Path.home() / ".agents" / "browser"
         )
-        self.headless = headless
+        if headless is None:
+            # Headless background mode by default unless AGENTS_BROWSER_HEADLESS=0/false
+            env_val = os.environ.get("AGENTS_BROWSER_HEADLESS", "1").strip().lower()
+            self.headless = env_val not in ("0", "false", "no")
+        else:
+            self.headless = headless
         self.proc: Optional[subprocess.Popen] = None
         self.ws: Optional[websockets.WebSocketClientProtocol] = None
         self._msg_id = 0
@@ -111,7 +151,12 @@ class CDPClient:
             "--window-size=1280,900",
         ]
         if self.headless:
-            cmd.extend(["--headless=new", "--disable-gpu"])
+            cmd.extend([
+                "--headless=new",
+                "--disable-gpu",
+                "--mute-audio",
+                "--hide-scrollbars",
+            ])
 
         self.proc = subprocess.Popen(
             cmd,
@@ -227,7 +272,24 @@ class CDPClient:
         await self.ws.send(json.dumps(payload))
         return await asyncio.wait_for(fut, timeout=timeout)
 
-    async def open(self, url: str, new_tab: bool = False) -> str:
+    async def set_headless(self, headless: bool) -> str:
+        """Switch headless mode, restarting the browser process if mode changed."""
+        if self.headless == headless and self._is_server_ready():
+            mode_str = "headless (background)" if self.headless else "visible (window)"
+            return f"Browser is already running in {mode_str} mode."
+
+        # Restart browser with new headless setting
+        await self.close()
+        self.headless = headless
+        self.ensure_browser_running()
+        await self.connect()
+        mode_str = "headless (background)" if self.headless else "visible (window)"
+        return f"Browser restarted in {mode_str} mode."
+
+    async def open(self, url: str, new_tab: bool = False, visible: bool = False) -> str:
+        if visible and self.headless:
+            await self.set_headless(False)
+
         if not url.startswith(("http://", "https://", "file://", "about:", "chrome://")):
             url = "https://" + url
 

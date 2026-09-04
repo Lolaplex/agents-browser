@@ -20,13 +20,51 @@ def get_client() -> CDPClient:
 
 
 @mcp.tool()
-async def browser_open(url: str, new_tab: bool = False) -> str:
-    """Navigate current browser tab to URL (or open in a new tab)."""
+async def browser_open(url: str, new_tab: bool = False, visible: bool = False) -> str:
+    """Navigate browser to URL (or open in a new tab).
+
+    Parameters:
+    - url: Web page URL to navigate to.
+    - new_tab: If True, opens in a new tab.
+    - visible: If True, opens with a visible desktop window instead of headless background.
+    """
     try:
         client = get_client()
-        return await client.open(url, new_tab=new_tab)
+        return await client.open(url, new_tab=new_tab, visible=visible)
     except Exception as e:
         return f"Error opening URL: {e}"
+
+
+@mcp.tool()
+async def browser_system_open(url: str) -> str:
+    """Open a URL directly in the user's personal default operating system browser (e.g. Floorp, Firefox, Chrome, Edge).
+
+    Use this when the human user explicitly asks to open or inspect a page in their personal desktop browser
+    with their own saved logins, bookmarks, cookies, and extensions.
+    """
+    try:
+        import webbrowser
+        if not url.startswith(("http://", "https://", "file://", "about:")):
+            url = "https://" + url
+        webbrowser.open(url)
+        return f"Opened {url} in your desktop default browser."
+    except Exception as e:
+        return f"Error opening in system browser: {e}"
+
+
+@mcp.tool()
+async def browser_set_headless(headless: bool = True) -> str:
+    """Toggle background headless mode for agents-browser automation.
+
+    Parameters:
+    - headless: True for silent, fast background operation without opening windows (default).
+                False to launch and show a visible browser window on the desktop.
+    """
+    try:
+        client = get_client()
+        return await client.set_headless(headless)
+    except Exception as e:
+        return f"Error setting headless mode: {e}"
 
 
 @mcp.tool()

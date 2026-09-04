@@ -62,6 +62,11 @@ def main(argv: list[str] | None = None) -> None:
     # open
     open_parser = subparsers.add_parser("open", help="Open a URL in browser")
     open_parser.add_argument("url", help="URL to navigate to")
+    open_parser.add_argument("--visible", action="store_true", help="Launch visible browser window instead of background headless")
+
+    # system-open
+    sys_parser = subparsers.add_parser("system-open", help="Open URL directly in default desktop browser (e.g. Floorp, Firefox, Chrome)")
+    sys_parser.add_argument("url", help="URL to open in system default browser")
 
     # search
     search_parser = subparsers.add_parser("search", help="Perform a web search and print structured results")
@@ -84,11 +89,16 @@ def main(argv: list[str] | None = None) -> None:
     elif args.command in ("init", "sync"):
         cmd_argv = ["--init"] if (args.command == "init" or getattr(args, "init", False)) else []
         sys.exit(sync_main(cmd_argv))
+    elif args.command == "system-open":
+        import webbrowser
+        url = args.url if args.url.startswith(("http://", "https://", "file://", "about:")) else f"https://{args.url}"
+        webbrowser.open(url)
+        print(f"Opened {url} in system default browser.")
     elif args.command == "open":
         async def _open():
-            c = CDPClient()
+            c = CDPClient(headless=not args.visible)
             try:
-                res = await c.open(args.url)
+                res = await c.open(args.url, visible=args.visible)
                 print(res)
             finally:
                 await c.close_ws()

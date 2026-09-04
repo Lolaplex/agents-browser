@@ -9,7 +9,13 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
 sys.path.insert(0, str(REPO_ROOT))
 
-from tests.test_unit import test_merge_mcp_server_into_file, test_merge_zed_settings
+from tests.test_unit import (
+    test_merge_mcp_server_into_file,
+    test_merge_zed_settings,
+    test_find_browser_executable,
+    test_cdp_client_default_headless,
+    test_mcp_tools_registered,
+)
 
 
 class TestAgentsBrowser(unittest.TestCase):
@@ -18,6 +24,15 @@ class TestAgentsBrowser(unittest.TestCase):
 
     def test_sync_zed(self):
         test_merge_zed_settings()
+
+    def test_browser_executable_discovery(self):
+        test_find_browser_executable()
+
+    def test_headless_default(self):
+        test_cdp_client_default_headless()
+
+    def test_mcp_tools(self):
+        test_mcp_tools_registered()
 
     def test_cli_version(self):
         from agents_browser.__main__ import main
