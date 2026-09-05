@@ -9,9 +9,7 @@ description = "Ultra-fast, zero-bloat Minimal CDP Browser MCP in Python for AI c
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
-authors = [
-    { name = "Felix Kempf" },
-]
+authors = [{ name = "Lolaplex" }]
 requires-python = ">=3.10"
 dependencies = [
     "mcp>=1.0.0,<2",

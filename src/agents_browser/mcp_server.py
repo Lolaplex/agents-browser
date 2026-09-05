@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import base64
 import json
-from typing import Dict, Optional
-from mcp.server.fastmcp import FastMCP
+from datetime import datetime
+from pathlib import Path
+from typing import Any, List, Optional, Union
+
+from mcp.server.fastmcp import FastMCP, Image
+
 from .cdp import CDPClient
 
 mcp = FastMCP("agents-browser")
@@ -17,6 +22,24 @@ def get_client() -> CDPClient:
     if _client is None:
         _client = CDPClient()
     return _client
+
+
+def screenshots_dir() -> Path:
+    """Persistent screenshot dir under ~/.agents/browser/screenshots."""
+    d = Path.home() / ".agents" / "browser" / "screenshots"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def resolve_screenshot_path(path: str = "") -> Path:
+    """Resolve output PNG path. Empty → timestamped file in screenshots_dir()."""
+    if path.strip():
+        out = Path(path).expanduser()
+        if not out.is_absolute():
+            out = screenshots_dir() / out.name
+        return out
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    return screenshots_dir() / f"shot-{stamp}.png"
 
 
 @mcp.tool()
@@ -105,12 +128,28 @@ async def browser_type(target: str, text: str, clear: bool = False, press_enter:
 
 
 @mcp.tool()
-async def browser_screenshot(full_page: bool = False) -> str:
-    """Capture a PNG screenshot of the current page and return base64 encoded PNG."""
+async def browser_screenshot(
+    full_page: bool = False, path: str = ""
+) -> Union[List[Any], str]:
+    """Capture a PNG screenshot, save it to disk, and return an Image for display.
+
+    Always writes a real PNG file (default: ~/.agents/browser/screenshots/shot-<timestamp>.png).
+    Returns a short path string plus FastMCP Image so the host can show the picture —
+    not a giant base64 data-URL string.
+
+    Parameters:
+    - full_page: If true, capture the full scrollable page.
+    - path: Optional output path. Relative names land in the screenshots dir.
+    """
     try:
         client = get_client()
         b64 = await client.screenshot(full_page=full_page)
-        return f"data:image/png;base64,{b64}"
+        if not b64:
+            return "Error capturing screenshot: empty image data"
+        out = resolve_screenshot_path(path)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(base64.b64decode(b64))
+        return [f"Screenshot saved: {out}", Image(path=str(out))]
     except Exception as e:
         return f"Error capturing screenshot: {e}"
 

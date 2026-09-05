@@ -28,3 +28,7 @@
 ## Launch Flags (managed)
 - Always: `--remote-debugging-port=9222`, `--user-data-dir=~/.agents/browser`, `--no-first-run`, `--window-size=1280,900`
 - Headless: `--headless=new`, `--disable-gpu`, `--mute-audio`, `--hide-scrollbars`
+
+## Screenshots
+- Default write dir: `~/.agents/browser/screenshots/shot-<YYYYMMDD-HHMMSS>.png`
+- `browser_screenshot` returns path text + FastMCP `Image` (host displays PNG). Not a raw base64 data-URL string.

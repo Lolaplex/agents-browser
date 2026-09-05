@@ -47,6 +47,6 @@ Use this skill when interacting with web pages, testing web applications, or aut
 | Reload | `browser_reload(ignore_cache=False)` | Reloads page |
 | Wait Stable | `browser_wait_stable()` | Waits for network/DOM quiet state |
 | In-Page Find | `browser_find(query="...")` | Search text occurrences without loading full text |
-| Screenshot | `browser_screenshot(full_page=False)` | Captures current viewport PNG (works headless) |
+| Screenshot | `browser_screenshot(full_page=False, path="")` | Saves PNG to `~/.agents/browser/screenshots/` (+ optional `path`). Returns path + Image. **Never delete** user-requested shots. |
 | Fast Search | `browser_search(query="...")` | Instant top-10 search results without hopping |
 | Reader Mode | `browser_read_article()` | Cleans page and returns readable markdown |

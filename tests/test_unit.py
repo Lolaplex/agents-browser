@@ -45,3 +45,20 @@ def test_mcp_tools_registered():
     assert "browser_set_headless" in tools
     assert "browser_snapshot" in tools
     assert "browser_search" in tools
+    assert "browser_screenshot" in tools
+
+
+def test_resolve_screenshot_path():
+    from agents_browser.mcp_server import resolve_screenshot_path, screenshots_dir
+
+    default = resolve_screenshot_path("")
+    assert default.parent == screenshots_dir()
+    assert default.name.startswith("shot-")
+    assert default.suffix == ".png"
+
+    named = resolve_screenshot_path("gangnam.png")
+    assert named == screenshots_dir() / "gangnam.png"
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        abs_path = Path(tmpdir) / "custom.png"
+        assert resolve_screenshot_path(str(abs_path)) == abs_path

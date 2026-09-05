@@ -18,7 +18,7 @@
 | `browser_read_article` | `() -> str` | Clean Reader-Mode markdown of the primary article |
 | `browser_scrape` | `(selector: str = "body", mode: str = "text") -> str` | Structured CSS scraping (`text`, `table`, `links`, `html`) |
 | `browser_fill_form` | `(fields_json: str, submit_selector: str = "") -> str` | Batch form filling and submission |
-| `browser_screenshot` | `(full_page: bool = False) -> str` | Captures PNG base64 screenshot |
+| `browser_screenshot` | `(full_page: bool = False, path: str = "") -> list` | Saves PNG under `~/.agents/browser/screenshots/` (or `path`) and returns path text + FastMCP `Image` for display |
 | `browser_evaluate` | `(script: str) -> str` | Executes JavaScript expression |
 | `browser_tabs` | `() -> str` | Lists active browser tabs |
 | `browser_switch_tab` | `(tab_id: str) -> str` | Switches active focus to another tab |

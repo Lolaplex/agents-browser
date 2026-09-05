@@ -116,7 +116,7 @@ Traditional browser automation MCPs (Playwright, Puppeteer) introduce massive fr
 | `browser_read_article` | *None* | Extracts clean article markdown, stripping ads, navbars, and banners. |
 | `browser_scrape` | `selector`, `mode` (`"text"`, `"table"`, `"links"`) | Structured data extraction from CSS selector. |
 | `browser_fill_form` | `fields_json`, `submit_selector` | Batch fill form fields and submit in one call. |
-| `browser_screenshot` | `full_page` (default: `false`) | Capture PNG screenshot as base64 (works headless). |
+| `browser_screenshot` | `full_page`, optional `path` | Saves PNG to `~/.agents/browser/screenshots/` and returns path + Image (not a base64 data-URL). |
 | `browser_evaluate` | `script` | Execute arbitrary JavaScript in tab context. |
 | `browser_tabs` | *None* | List active browser tabs with IDs and titles. |
 | `browser_switch_tab` | `tab_id` | Switch active tab focus. |
