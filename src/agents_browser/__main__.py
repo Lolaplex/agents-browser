@@ -84,6 +84,13 @@ def main(argv: list[str] | None = None) -> None:
 
     args = parser.parse_args(raw_args)
 
+    if args.command not in (None, "serve"):
+        try:
+            from .updates import check_for_updates
+            check_for_updates("agents-browser", __version__)
+        except Exception:
+            pass
+
     if args.command in (None, "serve"):
         mcp.run()
     elif args.command in ("init", "sync"):
