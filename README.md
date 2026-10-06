@@ -1,7 +1,7 @@
 # agents-browser
 
 <p align="left">
-  <a href="https://github.com/Lolaplex/agents-browser/releases"><img src="https://img.shields.io/badge/version-0.44.0-blue.svg?style=flat-square" alt="Version 0.44.0"></a>
+  <a href="https://github.com/Lolaplex/agents-browser/releases"><img src="https://img.shields.io/badge/version-0.45.0-blue.svg?style=flat-square" alt="Version 0.45.0"></a>
   <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/MCP-Standard-orange.svg?style=flat-square" alt="MCP"></a>
   <a href="https://python.org"><img src="https://img.shields.io/badge/Python-3.10+-3776AB.svg?style=flat-square&logo=python&logoColor=white" alt="Python 3.10+"></a>
   <a href="https://pypi.org/project/agents-browser/"><img src="https://img.shields.io/pypi/v/agents-browser.svg?style=flat-square" alt="PyPI"></a>

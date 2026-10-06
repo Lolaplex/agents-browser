@@ -19,7 +19,7 @@ _spec.loader.exec_module(mod)
 def test_help_json_shape():
     data = mod.help_json()
     assert data["name"] == "agents-browser"
-    assert data["version"] == "0.44.1"
+    assert data["version"] == "0.45.0"
     assert "open" in data["commands"]
     assert "snapshot" in data["commands"]
     assert "--help-json" in data["flags"]
