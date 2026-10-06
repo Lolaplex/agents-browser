@@ -1,6 +1,6 @@
-# agents-browser
+<h1 align="center">.agents / browser</h1>
 
-<p align="left">
+<p align="center">
   <a href="https://github.com/Lolaplex/agents-browser/releases"><img src="https://img.shields.io/badge/version-0.45.0-blue.svg?style=flat-square" alt="Version 0.45.0"></a>
   <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/MCP-Standard-orange.svg?style=flat-square" alt="MCP"></a>
   <a href="https://python.org"><img src="https://img.shields.io/badge/Python-3.10+-3776AB.svg?style=flat-square&logo=python&logoColor=white" alt="Python 3.10+"></a>
@@ -8,8 +8,10 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" alt="License"></a>
 </p>
 
-**Ultra-fast, zero-Node Python CDP Browser MCP for AI coding agents.**  
-Connects directly to your local Chrome, Edge, or Brave instance via native Chrome DevTools Protocol. **Headless by default.** Shared across **Cursor**, **Claude Code**, **Antigravity**, and **Zed**.
+<p align="center">
+  <strong>Ultra-fast, zero-Node Python CDP Browser MCP for AI coding agents.</strong><br>
+  Connects directly to your local Chrome, Edge, or Brave instance via native CDP. Headless by default.
+</p>
 
 ---
 
