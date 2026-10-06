@@ -10,17 +10,12 @@ from typing import Any, List, Optional, Union
 
 from mcp.server.fastmcp import FastMCP, Image
 
+from . import __version__
 from .cdp import CDPClient
+from .updates import attach_mcp_update_notice
 
 mcp = FastMCP("agents-browser")
-try:
-    from . import __version__
-    from .updates import attach_mcp_update_notice
-
-    attach_mcp_update_notice(mcp, "agents-browser", __version__)
-except Exception:
-    pass
-
+attach_mcp_update_notice(mcp, "agents-browser", __version__)
 
 _client: Optional[CDPClient] = None
 

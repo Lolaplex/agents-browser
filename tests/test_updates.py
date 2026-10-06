@@ -9,7 +9,14 @@ from unittest import mock
 
 import pytest
 
-from agents_browser import updates as u
+import importlib.util
+from pathlib import Path as _P
+
+_upd = _P(__file__).resolve().parents[1] / "src" / "agents_browser" / "updates.py"
+_spec = importlib.util.spec_from_file_location("agents_browser_updates", _upd)
+u = importlib.util.module_from_spec(_spec)
+assert _spec and _spec.loader
+_spec.loader.exec_module(u)
 
 
 PKG = "agents-browser"
