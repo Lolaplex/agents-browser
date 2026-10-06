@@ -28,6 +28,12 @@ from .sync import main as sync_main
 
 
 def main(argv: list[str] | None = None) -> None:
+    try:
+        from .updates import check_for_updates
+
+        check_for_updates("agents-browser", __version__)
+    except Exception:
+        pass
     raw_args = list(argv if argv is not None else sys.argv[1:])
 
     # Support plain positional 'version' and 'help'
