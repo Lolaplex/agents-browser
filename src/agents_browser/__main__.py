@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import asyncio
 import base64
 import sys
@@ -43,9 +44,20 @@ def main(argv: list[str] | None = None) -> None:
     if raw_args and raw_args[0] in ("help",):
         raw_args = ["--help"]
 
+    if "--help-json" in raw_args:
+        from .help_json import help_json
+
+        print(json.dumps(help_json(), indent=2))
+        return
+
     parser = argparse.ArgumentParser(
         prog="agents-browser",
         description="Minimal CDP Browser MCP for AI coding agents. Zero Node, zero 300MB downloads.",
+    )
+    parser.add_argument(
+        "--help-json",
+        action="store_true",
+        help="Emit machine-readable CLI spec as JSON.",
     )
     parser.add_argument(
         "-v",
