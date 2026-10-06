@@ -13,6 +13,14 @@ from mcp.server.fastmcp import FastMCP, Image
 from .cdp import CDPClient
 
 mcp = FastMCP("agents-browser")
+try:
+    from . import __version__
+    from .updates import attach_mcp_update_notice
+
+    attach_mcp_update_notice(mcp, "agents-browser", __version__)
+except Exception:
+    pass
+
 
 _client: Optional[CDPClient] = None
 
