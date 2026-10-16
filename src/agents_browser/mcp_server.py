@@ -14,8 +14,52 @@ from . import __version__
 from .cdp import CDPClient
 from .updates import attach_mcp_update_notice
 
-mcp = FastMCP("agents-browser")
+BROWSER_INSTRUCTIONS = (
+    "agents-browser — minimal zero-Node headless CDP browser automation.\n"
+    "- PROACTIVE USAGE: Whenever you need to verify a web UI, inspect live DOM, scrape an article, "
+    "or test a local/remote web app, ALWAYS call `browser_open` + `browser_snapshot` instead of Playwright/Puppeteer/Node.\n"
+    "- Headless by default (`--headless=new`). Only pass `visible=True` or call `browser_system_open` when the user explicitly asks to see a browser window.\n"
+    "- Use `@ref` indices from `browser_snapshot` (`@1`, `@2`, ...) with `browser_click` and `browser_type`."
+)
+
+BROWSER_RULES_BLOCK = f"<browser_rules>\n{BROWSER_INSTRUCTIONS}\n</browser_rules>"
+
+mcp = FastMCP("agents-browser", instructions=BROWSER_INSTRUCTIONS)
 attach_mcp_update_notice(mcp, "agents-browser", __version__)
+
+_rules_delivered_in_process = False
+_orig_add_tool = mcp.add_tool
+
+
+def _add_tool_with_rules(fn, *args, **kwargs):
+    import functools
+    import inspect
+
+    if inspect.iscoroutinefunction(fn):
+        @functools.wraps(fn)
+        async def async_wrapped(*a, **kw):
+            global _rules_delivered_in_process
+            res = await fn(*a, **kw)
+            if isinstance(res, str) and not _rules_delivered_in_process:
+                _rules_delivered_in_process = True
+                return f"{BROWSER_RULES_BLOCK}\n\n{res}"
+            return res
+
+        return _orig_add_tool(async_wrapped, *args, **kwargs)
+
+    @functools.wraps(fn)
+    def sync_wrapped(*a, **kw):
+        global _rules_delivered_in_process
+        res = fn(*a, **kw)
+        if isinstance(res, str) and not _rules_delivered_in_process:
+            _rules_delivered_in_process = True
+            return f"{BROWSER_RULES_BLOCK}\n\n{res}"
+        return res
+
+    return _orig_add_tool(sync_wrapped, *args, **kwargs)
+
+
+mcp.add_tool = _add_tool_with_rules  # type: ignore[method-assign]
 
 _client: Optional[CDPClient] = None
 
@@ -47,7 +91,10 @@ def resolve_screenshot_path(path: str = "") -> Path:
 
 @mcp.tool()
 async def browser_open(url: str, new_tab: bool = False, visible: bool = False) -> str:
-    """Navigate browser to URL (or open in a new tab).
+    """Navigate headless CDP browser to URL (or open in a new tab).
+
+    PROACTIVE USAGE: ALWAYS call this tool (followed by `browser_snapshot`) when verifying web UIs,
+    testing local dev servers, or inspecting live pages instead of using Playwright/Puppeteer.
 
     Parameters:
     - url: Web page URL to navigate to.
@@ -65,7 +112,7 @@ async def browser_open(url: str, new_tab: bool = False, visible: bool = False) -
 async def browser_system_open(url: str) -> str:
     """Open a URL directly in the user's personal default operating system browser (e.g. Floorp, Firefox, Chrome, Edge).
 
-    Use this when the human user explicitly asks to open or inspect a page in their personal desktop browser
+    Use this ONLY when the human user explicitly asks to open or inspect a page in their personal desktop browser
     with their own saved logins, bookmarks, cookies, and extensions.
     """
     try:
@@ -95,7 +142,10 @@ async def browser_set_headless(headless: bool = True) -> str:
 
 @mcp.tool()
 async def browser_snapshot() -> str:
-    """Capture a clean text snapshot of the current page, headings, and interactive elements with index refs (@1, @2)."""
+    """Capture a clean text snapshot of the current page, headings, and interactive elements with index refs (@1, @2).
+
+    PROACTIVE USAGE: Call immediately after `browser_open` or page navigation to inspect the DOM and obtain `@ref` targets.
+    """
     try:
         client = get_client()
         return await client.snapshot()
