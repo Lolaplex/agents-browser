@@ -26,3 +26,15 @@ Use this skill for web information retrieval, structured table extraction, searc
 
 4. **Batch Form Filling**:
    - `browser_fill_form(fields_json='{"@1": "admin", "@2": "password123"}', submit_selector="@3")`
+
+5. **CDP Download Interception**:
+   - `browser_download(ref_or_url="@1", dest_path="downloads/data.zip")`
+   - Intercepts file downloads cleanly, preventing OS `Downloads/` pollution and returning verified file path.
+
+6. **Fast REST / API Fetch**:
+   - `browser_fetch(url="https://api.openalex.org/works/...", method="GET")`
+   - Rapid HTTP/JSON requests with browser cookies, 100x faster than full DOM rendering.
+
+7. **Direct PDF Stream & Document Extraction**:
+   - `browser_extract_pdf(url_or_ref="https://example.com/paper.pdf", save_path="paper.pdf")`
+   - Extracts PDF streams via Chrome PDF Viewer / Page.printToPDF with text preview and page count.

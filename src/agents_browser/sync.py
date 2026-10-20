@@ -21,9 +21,13 @@ RULE_FILENAME = "agents-browser.mdc"
 
 ALWAYS_ON_BODY = """# Browser Control (`agents-browser`)
 
-- **Zero-Node Headless CDP**: For web verification, live UI testing, DOM snapshots, form filling, or article scraping, ALWAYS use MCP `agents-browser` (`browser_open`, `browser_snapshot`, `browser_click`, `browser_type`, `browser_evaluate`, `browser_screenshot`) instead of spawning Playwright/Puppeteer/Node.
-- **Headless by Default**: Runs silently in background (`--headless=new`). Only pass `visible=True` (`browser_open(..., visible=True)`) or `browser_system_open` when the user explicitly asks for a visible window.
-- **Indexed `@ref` Workflow**: Call `browser_open(url)` → `browser_snapshot()` to get `@1`, `@2` element refs → `browser_click("@1")` / `browser_type("@2", ...)`."""
+- **Zero-Node Headless CDP**: ALWAYS use MCP `agents-browser` instead of spawning Playwright/Puppeteer/Node or writing ad-hoc terminal scripts. Headless by default (`--headless=new`). Pass `visible=True` or `browser_system_open` only when explicitly requested.
+- **Task-Adaptive Tool Selection (Pick the Right Tool Per Use Case)**:
+  - *Research & Reading*: `browser_search(query)`, `browser_read_article()` (clean distraction-free markdown), `browser_extract_pdf()`, `browser_fetch()`.
+  - *Web Automation & Forms*: `browser_open` → `browser_snapshot()` (indexed `@1`, `@2` refs) → `browser_click`, `browser_type`, `browser_select`, `browser_fill_form`, `browser_scroll(target=...)`.
+  - *Data Scraping & Tables*: `browser_scrape(mode='table'|'links'|'text')`, `browser_download()`.
+  - *UI Testing & Frontend Dev*: `browser_audit()` (console errors & overflow check), `browser_inspect()`, `browser_get_styles()`, `browser_get_layout()`, `browser_set_viewport(preset='mobile'|'desktop')`.
+  - *Visual Proofs & Demos*: `browser_screenshot()` (PNG), `browser_record()` (MP4 video/screencast)."""
 
 
 def _agents_home() -> Path:

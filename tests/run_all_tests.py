@@ -15,6 +15,10 @@ from tests.test_unit import (
     test_find_browser_executable,
     test_cdp_client_default_headless,
     test_mcp_tools_registered,
+    test_downloads_dir,
+    test_event_listeners,
+    test_recordings_dir,
+    test_client_init_fields,
 )
 
 
@@ -33,6 +37,18 @@ class TestAgentsBrowser(unittest.TestCase):
 
     def test_mcp_tools(self):
         test_mcp_tools_registered()
+
+    def test_downloads(self):
+        test_downloads_dir()
+
+    def test_listeners(self):
+        test_event_listeners()
+
+    def test_recordings(self):
+        test_recordings_dir()
+
+    def test_client_fields(self):
+        test_client_init_fields()
 
     def test_cli_version(self):
         from agents_browser.__main__ import main

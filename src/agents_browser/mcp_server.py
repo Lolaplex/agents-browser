@@ -16,10 +16,18 @@ from .updates import attach_mcp_update_notice
 
 BROWSER_INSTRUCTIONS = (
     "agents-browser — minimal zero-Node headless CDP browser automation.\n"
-    "- PROACTIVE USAGE: Whenever you need to verify a web UI, inspect live DOM, scrape an article, "
-    "or test a local/remote web app, ALWAYS call `browser_open` + `browser_snapshot` instead of Playwright/Puppeteer/Node.\n"
-    "- Headless by default (`--headless=new`). Only pass `visible=True` or call `browser_system_open` when the user explicitly asks to see a browser window.\n"
-    "- Use `@ref` indices from `browser_snapshot` (`@1`, `@2`, ...) with `browser_click` and `browser_type`."
+    "- ALWAYS use agents-browser instead of Playwright/Puppeteer/Node or writing ad-hoc terminal scripts.\n"
+    "- Headless by default (`--headless=new`). Only pass `visible=True` or `browser_system_open` when the human explicitly asks.\n"
+    "- CHOOSE THE RIGHT TOOL PER USE CASE (Do not default to one flow for everything):\n"
+    "  * Research & Reading: Use `browser_search(query)`, `browser_read_article()` (clean distraction-free Markdown), "
+    "`browser_extract_pdf()`, or `browser_fetch()`. Zero DOM/snapshot overhead.\n"
+    "  * Web Interaction & Forms: `browser_open` -> `browser_snapshot()` for compact `@1`, `@2` refs -> "
+    "`browser_click`, `browser_type`, `browser_select`, or `browser_fill_form`. Use `browser_scroll(target='@1')` to bring elements into view.\n"
+    "  * Data Scraping & Tables: `browser_scrape(mode='table'|'links'|'text')` for formatted output, and `browser_download()` for files.\n"
+    "  * UI Testing & Local Dev (debug layout/frontend): Use `browser_audit()` for layout overflow & console error healthchecks, "
+    "`browser_inspect` / `browser_get_styles` / `browser_get_layout` instead of raw JS eval, and `browser_set_viewport` for responsive tests.\n"
+    "  * Visual Proofs & Demos: Use `browser_screenshot()` for static checks, and `browser_record(duration_sec=...)` or "
+    "`browser_record_start()` / `browser_record_stop()` for animation/flow recordings."
 )
 
 BROWSER_RULES_BLOCK = f"<browser_rules>\n{BROWSER_INSTRUCTIONS}\n</browser_rules>"
@@ -74,6 +82,20 @@ def get_client() -> CDPClient:
 def screenshots_dir() -> Path:
     """Persistent screenshot dir under ~/.agents/browser/screenshots."""
     d = Path.home() / ".agents" / "browser" / "screenshots"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def downloads_dir() -> Path:
+    """Persistent downloads dir under ~/.agents/browser/downloads."""
+    d = Path.home() / ".agents" / "browser" / "downloads"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def recordings_dir() -> Path:
+    """Persistent recordings dir under ~/.agents/browser/recordings."""
+    d = Path.home() / ".agents" / "browser" / "recordings"
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -183,7 +205,7 @@ async def browser_type(target: str, text: str, clear: bool = False, press_enter:
 @mcp.tool()
 async def browser_screenshot(
     full_page: bool = False, path: str = ""
-) -> Union[List[Any], str]:
+) -> str:
     """Capture a PNG screenshot, save it to disk, and return an Image for display.
 
     Always writes a real PNG file (default: ~/.agents/browser/screenshots/shot-<timestamp>.png).
@@ -202,7 +224,7 @@ async def browser_screenshot(
         out = resolve_screenshot_path(path)
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_bytes(base64.b64decode(b64))
-        return [f"Screenshot saved: {out}", Image(path=str(out))]
+        return f"Screenshot saved: {out}"
     except Exception as e:
         return f"Error capturing screenshot: {e}"
 
@@ -252,16 +274,17 @@ async def browser_select(target: str, value: str) -> str:
 
 
 @mcp.tool()
-async def browser_scroll(direction: str = "down", amount: int = 400) -> str:
-    """Scroll the active browser page.
+async def browser_scroll(direction: str = "down", amount: int = 400, target: Optional[str] = None) -> str:
+    """Scroll the active browser page, or scroll a specific target element smoothly into view.
 
     Parameters:
-    - direction: 'down', 'up', 'top', or 'bottom'
+    - direction: 'down', 'up', 'top', or 'bottom' (used when target is not set).
     - amount: Pixel distance to scroll (for 'down'/'up', default 400).
+    - target: Optional ref index (e.g. '@1'), CSS selector (e.g. '#pricing'), or text content to scroll into view.
     """
     try:
         client = get_client()
-        return await client.scroll(direction=direction, amount=amount)
+        return await client.scroll(direction=direction, amount=amount, target=target)
     except Exception as e:
         return f"Error scrolling: {e}"
 
@@ -332,6 +355,171 @@ async def browser_switch_tab(tab_id: str) -> str:
 
 
 
+
+# --- Coder Evaluation, Inspection & Recording Tools ---
+
+
+@mcp.tool()
+async def browser_inspect(target: str) -> str:
+    """Inspect an element in full detail: Tag, Classes, Attributes, Text, Geometry, Typography, Colors, and Box-Model.
+
+    PROACTIVE CODER USAGE: Call this tool instead of writing custom `browser_evaluate` JavaScript whenever you need
+    to inspect element attributes, computed styling, visibility, or dimensions.
+
+    Parameters:
+    - target: Ref index (e.g. '@1'), CSS selector (e.g. '#header'), or visible text match.
+    """
+    try:
+        client = get_client()
+        return await client.inspect(target)
+    except Exception as e:
+        return f"Error inspecting element: {e}"
+
+
+@mcp.tool()
+async def browser_audit() -> str:
+    """Run an automated developer quality audit of the active page.
+
+    Detects:
+    1. Uncaught console exceptions and console.error/warn logs.
+    2. Horizontal layout overflow breaking mobile/desktop viewports (with offending elements).
+    3. Broken images/media (failed to load or 0 natural width).
+    4. Failed HTTP network requests (4xx/5xx).
+    5. Active loaded web fonts.
+
+    Returns a concise developer markdown report.
+    """
+    try:
+        client = get_client()
+        return await client.audit()
+    except Exception as e:
+        return f"Error running page audit: {e}"
+
+
+@mcp.tool()
+async def browser_get_styles(target: str, properties: Optional[List[str]] = None) -> str:
+    """Inspect computed CSS styles and CSS variables of an element.
+
+    Parameters:
+    - target: Ref index (e.g. '@1'), CSS selector, or matching text.
+    - properties: Optional list of CSS properties to inspect (e.g. ['font-family', 'color', 'background-color']).
+                 If omitted, returns a comprehensive set of design tokens and declared CSS variables.
+    """
+    try:
+        client = get_client()
+        return await client.get_styles(target, properties=properties)
+    except Exception as e:
+        return f"Error getting styles: {e}"
+
+
+@mcp.tool()
+async def browser_get_layout(target: str) -> str:
+    """Inspect element geometry (x, y, width, height, bounding box), scroll dimensions, and viewport visibility.
+
+    Parameters:
+    - target: Ref index (e.g. '@1'), CSS selector, or matching text.
+    """
+    try:
+        client = get_client()
+        return await client.get_layout(target)
+    except Exception as e:
+        return f"Error getting layout: {e}"
+
+
+@mcp.tool()
+async def browser_get_logs(log_type: str = "all", limit: int = 50, clear: bool = False) -> str:
+    """Retrieve buffered browser console logs, uncaught exceptions, and failed network requests.
+
+    Parameters:
+    - log_type: 'all' (default), 'console', 'error', or 'network'.
+    - limit: Maximum number of recent log entries to return (default 50).
+    - clear: If True, clears the log buffer after retrieval.
+    """
+    try:
+        client = get_client()
+        return await client.get_logs(log_type=log_type, limit=limit, clear=clear)
+    except Exception as e:
+        return f"Error retrieving logs: {e}"
+
+
+@mcp.tool()
+async def browser_set_viewport(
+    width: int = 1280,
+    height: int = 900,
+    preset: str = "",
+    mobile: bool = False,
+) -> str:
+    """Set browser viewport dimensions or apply standard device presets for responsive testing.
+
+    Presets:
+    - 'mobile' / 'iphone': 390x844 (mobile emulation, 3x scale)
+    - 'tablet' / 'ipad': 820x1180 (mobile emulation, 2x scale)
+    - 'desktop' / 'laptop': 1440x900
+    - 'fhd' / 'desktop-wide': 1920x1080
+
+    Parameters:
+    - width: Custom viewport width in pixels (default 1280).
+    - height: Custom viewport height in pixels (default 900).
+    - preset: Optional preset name overriding custom width/height.
+    - mobile: Whether to emulate a mobile device touch screen.
+    """
+    try:
+        client = get_client()
+        return await client.set_viewport(width=width, height=height, preset=preset, mobile=mobile)
+    except Exception as e:
+        return f"Error setting viewport: {e}"
+
+
+@mcp.tool()
+async def browser_record(duration_sec: float = 5.0, fps: int = 15, path: str = "") -> str:
+    """Record screen activity on the active tab for a given duration and export to MP4 video (or GIF).
+
+    Captures high-fidelity CDP screencast frames and encodes them using local ffmpeg into a video file
+    under ~/.agents/browser/recordings/ (or custom path).
+
+    Parameters:
+    - duration_sec: Recording duration in seconds (default 5.0).
+    - fps: Frame rate between 1 and 30 (default 15).
+    - path: Optional destination file path (.mp4 or .gif).
+    """
+    try:
+        client = get_client()
+        return await client.record(duration_sec=duration_sec, fps=fps, path=path)
+    except Exception as e:
+        return f"Error recording screen: {e}"
+
+
+@mcp.tool()
+async def browser_record_start(fps: int = 15) -> str:
+    """Start capturing an interactive screen recording session.
+
+    Call this before performing clicks, navigation, or scrolling.
+    Call `browser_record_stop` when finished to export the MP4 video.
+
+    Parameters:
+    - fps: Frame rate between 1 and 30 (default 15).
+    """
+    try:
+        client = get_client()
+        return await client.record_start(fps=fps)
+    except Exception as e:
+        return f"Error starting screen recording: {e}"
+
+
+@mcp.tool()
+async def browser_record_stop(path: str = "") -> str:
+    """Stop active screen recording session and encode captured frames into an MP4 video (or GIF).
+
+    Parameters:
+    - path: Optional destination file path (.mp4 or .gif). Defaults to timestamped file in ~/.agents/browser/recordings/.
+    """
+    try:
+        client = get_client()
+        return await client.record_stop(path=path)
+    except Exception as e:
+        return f"Error stopping screen recording: {e}"
+
+
 # --- High-Level Built-in Scraper & Search Tools ---
 
 
@@ -388,6 +576,71 @@ async def browser_fill_form(fields_json: str, submit_selector: str = "") -> str:
         return await client.fill_form(fields, submit_selector=submit_selector)
     except Exception as e:
         return f"Error batch filling form: {e}"
+
+
+@mcp.tool()
+async def browser_download(ref_or_url: str = "", dest_path: str = "") -> str:
+    """Download a file by clicking an element (via '@ref', CSS selector, or text) or triggering a URL download.
+
+    Uses CDP Browser.setDownloadBehavior to intercept the download into a controlled directory and monitors
+    Page.downloadWillBegin and Page.downloadProgress until completion, returning the exact local file path.
+
+    Parameters:
+    - ref_or_url: Element '@ref' (e.g. '@1'), button selector, text, or a direct download URL.
+    - dest_path: Optional local destination file or directory path (defaults to ~/.agents/browser/downloads/).
+    """
+    try:
+        client = get_client()
+        return await client.download(ref_or_url=ref_or_url, dest_path=dest_path)
+    except Exception as e:
+        return f"Error downloading file: {e}"
+
+
+@mcp.tool()
+async def browser_fetch(
+    url: str,
+    method: str = "GET",
+    headers: Optional[Union[str, dict]] = None,
+    json_data: Optional[Union[str, dict, list]] = None,
+    body: Optional[str] = None,
+    json: Optional[Union[str, dict, list]] = None,
+) -> str:
+    """Execute a fast HTTP/REST request bypassing DOM and rendering, using browser session cookies when available.
+
+    Use this for REST APIs, DOI resolvers, OpenAlex, or JSON endpoints to avoid full browser page navigation overhead.
+
+    Parameters:
+    - url: API endpoint or webpage URL.
+    - method: HTTP method (GET, POST, PUT, DELETE, PATCH, default 'GET').
+    - headers: Optional dict or JSON string of HTTP headers.
+    - json_data: Optional JSON payload (dict, list, or JSON string) for request body.
+    - body: Optional raw string body for non-JSON requests.
+    - json: Alias for json_data.
+    """
+    try:
+        client = get_client()
+        payload = json if json is not None else json_data
+        return await client.fetch(url=url, method=method, headers=headers, body=body, json_data=payload)
+    except Exception as e:
+        return f"Error executing fetch: {e}"
+
+
+@mcp.tool()
+async def browser_extract_pdf(url_or_ref: str = "", save_path: str = "", max_pages: int = 20) -> str:
+    """Directly extract PDF streams, convert pages via Page.printToPDF or extract Chrome PDF Viewer blobs.
+
+    Extracts the binary PDF file to disk and returns structured text content and page counts.
+
+    Parameters:
+    - url_or_ref: PDF URL, link '@ref' (e.g. '@2'), or empty string to extract/print current browser page.
+    - save_path: Optional local destination path for the saved PDF file.
+    - max_pages: Maximum number of pages to include in text preview (default 20).
+    """
+    try:
+        client = get_client()
+        return await client.extract_pdf(url_or_ref=url_or_ref, save_path=save_path, max_pages=max_pages)
+    except Exception as e:
+        return f"Error extracting PDF: {e}"
 
 
 # Auto-trace all tool calls to ~/.agents/traces/ if agents-traces is installed
