@@ -64,6 +64,18 @@ def help_json() -> dict[str, Any]:
                 "usage": "agents-browser screenshot [--out PATH]",
                 "description": "Capture a PNG of the current page",
             },
+            "download": {
+                "usage": "agents-browser download TARGET [--dest PATH]",
+                "description": "Download a file via element click or URL to controlled destination",
+            },
+            "fetch": {
+                "usage": "agents-browser fetch URL [--method METHOD] [--json JSON]",
+                "description": "Fast HTTP/JSON request using browser cookies without DOM rendering",
+            },
+            "extract-pdf": {
+                "usage": "agents-browser extract-pdf [TARGET] [--out PATH]",
+                "description": "Directly extract PDF streams, convert pages via Page.printToPDF or extract PDF Viewer blobs",
+            },
         },
         "flags": ["--help-json", "--version"],
         "env": ["AGENTS_BROWSER_BIN", "AGENTS_BROWSER_HEADLESS", "CHROME_PATH", "BROWSER_PATH"],

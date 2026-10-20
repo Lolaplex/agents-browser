@@ -1,7 +1,7 @@
 <h1 align="center">.agents / browser</h1>
 
 <p align="center">
-  <a href="https://github.com/Lolaplex/agents-browser/releases"><img src="https://img.shields.io/badge/version-0.45.0-blue.svg?style=flat-square" alt="Version 0.45.0"></a>
+  <a href="https://github.com/Lolaplex/agents-browser/releases"><img src="https://img.shields.io/badge/version-0.46.0-blue.svg?style=flat-square" alt="Version 0.46.0"></a>
   <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/MCP-Standard-orange.svg?style=flat-square" alt="MCP"></a>
   <a href="https://python.org"><img src="https://img.shields.io/badge/Python-3.10+-3776AB.svg?style=flat-square&logo=python&logoColor=white" alt="Python 3.10+"></a>
   <a href="https://pypi.org/project/agents-browser/"><img src="https://img.shields.io/pypi/v/agents-browser.svg?style=flat-square" alt="PyPI"></a>
@@ -98,30 +98,54 @@ Traditional browser automation MCPs (Playwright, Puppeteer) introduce massive fr
 
 ---
 
+## Task-Adaptive Tool Architecture
+
+`agents-browser` adapts dynamically to the developer's specific task without forcing a rigid workflow:
+
+- **Research & Reading:** `browser_search`, `browser_read_article` (distraction-free markdown), `browser_extract_pdf`, `browser_fetch` (fast HTTP using browser cookies).
+- **Web Automation & Forms:** `browser_snapshot` (`@ref` indexing) → `browser_click`, `browser_type`, `browser_select`, `browser_fill_form`, `browser_scroll(target=...)`.
+- **Data Scraping:** `browser_scrape(mode='table'|'links'|'text')`, `browser_download`.
+- **Developer UI Testing & Dev Servers:** `browser_audit` (console errors & horizontal overflow detection), `browser_inspect`, `browser_get_styles`, `browser_get_layout`, `browser_set_viewport`.
+- **Visual Proofs & Demos:** `browser_screenshot` (PNG), `browser_record` / `browser_record_start` + `stop` (MP4 video screencast via local ffmpeg).
+
+---
+
 ## MCP Tools Reference
 
-| Tool | Parameters | Description |
-| :--- | :--- | :--- |
-| `browser_open` | `url`, `new_tab`, `visible` (default: `false`) | Navigate headless by default; set `visible=True` only when asked for a window. |
-| `browser_system_open` | `url` | Open URL in the user's personal OS default browser (no CDP). |
-| `browser_set_headless` | `headless` (default: `true`) | Restart CDP browser in headless or visible mode. |
-| `browser_snapshot` | *None* | Extract clean text outline with indexed `@ref` element IDs (`@1`, `@2`). |
-| `browser_click` | `target` | Click element by `@ref` (e.g. `@1`), CSS selector, or matching text. |
-| `browser_type` | `target`, `text`, `clear`, `press_enter` | Focus and type text into input/textarea. |
-| `browser_select` | `target`, `value` | Select dropdown `<select>` option by text, value, or substring. |
-| `browser_scroll` | `direction` (`"down"`, `"up"`, `"top"`, `"bottom"`), `amount` | Scroll the active page viewport. |
-| `browser_go_back` | *None* | Navigate back in browser history. |
-| `browser_reload` | `ignore_cache` (default: `false`) | Reload active page (optional hard refresh). |
-| `browser_wait_stable` | `timeout_ms`, `quiet_ms` | Wait for network requests (fetch/XHR) and DOM mutations to settle. |
-| `browser_find` | `query`, `forward`, `match_case` | Fast in-page text search with match stats without dumping full page. |
-| `browser_search` | `query`, `engine` (default: `"duckduckgo"`) | Direct web search returning top organic results with Title, URL, and Snippet. |
-| `browser_read_article` | *None* | Extracts clean article markdown, stripping ads, navbars, and banners. |
-| `browser_scrape` | `selector`, `mode` (`"text"`, `"table"`, `"links"`) | Structured data extraction from CSS selector. |
-| `browser_fill_form` | `fields_json`, `submit_selector` | Batch fill form fields and submit in one call. |
-| `browser_screenshot` | `full_page`, optional `path` | Saves PNG to `~/.agents/browser/screenshots/` and returns path + Image (not a base64 data-URL). |
-| `browser_evaluate` | `script` | Execute arbitrary JavaScript in tab context. |
-| `browser_tabs` | *None* | List active browser tabs with IDs and titles. |
-| `browser_switch_tab` | `tab_id` | Switch active tab focus. |
+| Category | Tool | Parameters | Description |
+| :--- | :--- | :--- | :--- |
+| **Navigation** | `browser_open` | `url`, `new_tab`, `visible` | Navigate headless by default; intercepts direct downloads & auto-dismisses cookie overlays. |
+| | `browser_system_open` | `url` | Open URL in the user's personal desktop browser (Floorp, Firefox, Chrome, Edge). |
+| | `browser_set_headless` | `headless` | Toggle background headless mode (True = background, False = window). |
+| | `browser_go_back` | *None* | Navigate back in browser history. |
+| | `browser_reload` | `ignore_cache` | Reload active page (optional hard refresh). |
+| | `browser_tabs` | *None* | List active browser tabs with IDs, titles, and URLs. |
+| | `browser_switch_tab` | `tab_id` | Switch active tab focus. |
+| **Research** | `browser_search` | `query`, `engine` | Direct web search returning top organic results with Title, URL, and Snippet. |
+| | `browser_read_article` | *None* | Extracts clean article markdown, stripping ads, navbars, and banners. |
+| | `browser_extract_pdf` | `url_or_ref`, `save_path`, `max_pages` | Extracts PDF streams via Chrome PDF Viewer or Page.printToPDF with text preview. |
+| | `browser_fetch` | `url`, `method`, `headers`, `json_data`, `body` | Fast non-DOM HTTP/REST client using browser session cookies without rendering overhead. |
+| **Automation** | `browser_snapshot` | *None* | Extract clean text outline with indexed `@ref` element IDs (`@1`, `@2`). |
+| | `browser_click` | `target` | Click element by `@ref` (e.g. `@1`), CSS selector, or matching text. |
+| | `browser_type` | `target`, `text`, `clear`, `press_enter` | Focus and type text into input/textarea. |
+| | `browser_select` | `target`, `value` | Select dropdown `<select>` option by text, value, or substring. |
+| | `browser_fill_form` | `fields_json`, `submit_selector` | Batch fill form fields and submit in one call. |
+| | `browser_scroll` | `direction`, `amount`, `target` | Scroll page viewport or scroll target element smoothly into view. |
+| | `browser_wait_stable` | `timeout_ms`, `quiet_ms` | Wait for network requests (fetch/XHR) and DOM mutations to settle. |
+| | `browser_find` | `query`, `forward`, `match_case` | Fast in-page text search with match stats without dumping full page. |
+| **Scraping** | `browser_scrape` | `selector`, `mode` (`"table"`, `"links"`, `"text"`, `"html"`) | Structured data extraction from CSS selector into Markdown. |
+| | `browser_download` | `ref_or_url`, `dest_path` | Intercept and monitor CDP downloads to controlled local directories. |
+| **UI Testing** | `browser_audit` | *None* | Automated developer audit: console errors, horizontal layout overflow, broken media, failed requests. |
+| | `browser_inspect` | `target` | Complete element card: tag, attributes, text snippet, geometry, typography, and box-model. |
+| | `browser_get_styles` | `target`, `properties` | Inspect computed CSS properties and declared CSS variables (`--*`). |
+| | `browser_get_layout` | `target` | Inspect bounding rect (`x, y, w, h`), scroll metrics, and viewport visibility. |
+| | `browser_get_logs` | `log_type`, `limit`, `clear` | Retrieve buffered console logs, uncaught exceptions, and failed HTTP network requests. |
+| | `browser_set_viewport` | `width`, `height`, `preset`, `mobile` | Set viewport dimensions or apply presets (`mobile`, `tablet`, `desktop`, `fhd`). |
+| | `browser_evaluate` | `script` | Execute arbitrary JavaScript expression in tab context. |
+| **Visuals** | `browser_screenshot` | `full_page`, `path` | Capture PNG screenshot to `~/.agents/browser/screenshots/` (returns path + FastMCP Image). |
+| | `browser_record` | `duration_sec`, `fps`, `path` | One-shot screen recording exported to MP4 video (or GIF) via local ffmpeg. |
+| | `browser_record_start` | `fps` | Begin interactive multi-step screen recording session. |
+| | `browser_record_stop` | `path` | Stop active recording session and encode captured frames into an MP4 video. |
 
 ---
 

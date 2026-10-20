@@ -100,6 +100,22 @@ def main(argv: list[str] | None = None) -> None:
     shot_parser = subparsers.add_parser("screenshot", help="Capture screenshot")
     shot_parser.add_argument("--out", default="screenshot.png", help="Output PNG file path")
 
+    # download
+    dl_parser = subparsers.add_parser("download", help="Download file via element click or URL")
+    dl_parser.add_argument("target", help="Element ref (@1), selector, or download URL")
+    dl_parser.add_argument("--dest", default="", help="Destination file or directory path")
+
+    # fetch
+    fetch_parser = subparsers.add_parser("fetch", help="Fast HTTP request using browser session cookies without DOM")
+    fetch_parser.add_argument("url", help="Target URL to fetch")
+    fetch_parser.add_argument("--method", default="GET", help="HTTP method (default GET)")
+    fetch_parser.add_argument("--data", default=None, help="JSON or text payload for request body")
+
+    # extract-pdf
+    pdf_parser = subparsers.add_parser("extract-pdf", help="Extract PDF stream via printToPDF or blob extract")
+    pdf_parser.add_argument("target", nargs="?", default="", help="PDF URL or element ref (defaults to current page)")
+    pdf_parser.add_argument("--out", default="", help="Output PDF file path")
+
     args = parser.parse_args(raw_args)
 
     if args.command not in (None, "serve"):
@@ -166,6 +182,33 @@ def main(argv: list[str] | None = None) -> None:
             finally:
                 await c.close_ws()
         asyncio.run(_shot())
+    elif args.command == "download":
+        async def _download():
+            c = CDPClient()
+            try:
+                res = await c.download(ref_or_url=args.target, dest_path=args.dest)
+                print(res)
+            finally:
+                await c.close_ws()
+        asyncio.run(_download())
+    elif args.command == "fetch":
+        async def _fetch():
+            c = CDPClient()
+            try:
+                res = await c.fetch(url=args.url, method=args.method, json_data=args.data)
+                print(res)
+            finally:
+                await c.close_ws()
+        asyncio.run(_fetch())
+    elif args.command == "extract-pdf":
+        async def _extract_pdf():
+            c = CDPClient()
+            try:
+                res = await c.extract_pdf(url_or_ref=args.target, save_path=args.out)
+                print(res)
+            finally:
+                await c.close_ws()
+        asyncio.run(_extract_pdf())
 
 
 if __name__ == "__main__":

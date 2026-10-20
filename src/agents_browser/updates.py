@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import functools
+import inspect
 import json
 import os
 import sys
@@ -163,14 +164,24 @@ def attach_mcp_update_notice(mcp: object, package_name: str, current_version: st
     original = mcp.add_tool  # type: ignore[attr-defined]
 
     def add_tool(fn, *args, **kwargs):  # type: ignore[no-untyped-def]
-        @functools.wraps(fn)
-        def wrapped(*a, **kw):
-            result = fn(*a, **kw)
-            if isinstance(result, str):
-                notice = mcp_update_notice(package_name, current_version)
-                if notice and not result.startswith(notice):
-                    return f"{notice}\n\n{result}"
-            return result
+        if inspect.iscoroutinefunction(fn):
+            @functools.wraps(fn)
+            async def wrapped(*a, **kw):
+                result = await fn(*a, **kw)
+                if isinstance(result, str):
+                    notice = mcp_update_notice(package_name, current_version)
+                    if notice and not result.startswith(notice):
+                        return f"{notice}\n\n{result}"
+                return result
+        else:
+            @functools.wraps(fn)
+            def wrapped(*a, **kw):
+                result = fn(*a, **kw)
+                if isinstance(result, str):
+                    notice = mcp_update_notice(package_name, current_version)
+                    if notice and not result.startswith(notice):
+                        return f"{notice}\n\n{result}"
+                return result
 
         return original(wrapped, *args, **kwargs)
 
