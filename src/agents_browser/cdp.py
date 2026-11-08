@@ -49,6 +49,18 @@ def find_browser_executable() -> str:
                     pass
 
             if detected_registry:
+                # Prefer plain Chromium builds over skinned/agentic forks (Comet, Opera)
+                # that inject their own UI surfaces into pages.
+                preference = ["chrome", "msedge", "edge", "brave", "vivaldi", "chromium", "comet", "opera"]
+
+                def _rank(exe_path: str) -> int:
+                    name = os.path.basename(exe_path).lower()
+                    for i, token in enumerate(preference):
+                        if token in name:
+                            return i
+                    return len(preference)
+
+                detected_registry.sort(key=_rank)
                 return detected_registry[0]
         except Exception:
             pass
@@ -634,6 +646,80 @@ class CDPClient:
         await asyncio.sleep(0.5)
         return str(res)
 
+    async def real_click(self, target: str) -> str:
+        """Trusted click via CDP Input.dispatchMouseEvent at the element's screen coords.
+
+        Unlike click() (synthetic DOM events), this produces trusted input that
+        reaches into cross-origin iframes (e.g. PayPal smart buttons) and counts
+        as a user gesture, so window.open popups are allowed.
+        """
+        js_code = f"""
+        (() => {{
+            const t = {json.dumps(target.strip())};
+            let el = null;
+
+            if (t.startsWith('@')) {{
+                const idx = parseInt(t.slice(1), 10);
+                if (window.__agents_refs && window.__agents_refs[idx]) {{
+                    el = window.__agents_refs[idx];
+                }}
+            }}
+
+            if (!el) {{
+                try {{
+                    el = document.querySelector(t);
+                }} catch (e) {{}}
+            }}
+
+            if (!el) {{
+                const lower = t.toLowerCase();
+                const linkSelectors = 'a[href], button, input[type=button], input[type=submit], [role=button], [role=link], iframe';
+                for (const sel of [linkSelectors, 'h1, h2, h3, p, span, div']) {{
+                    for (const candidate of document.querySelectorAll(sel)) {{
+                        const txt = (candidate.innerText || candidate.value || candidate.title || '').trim().toLowerCase();
+                        if (!txt || txt.length > 200) continue;
+                        if (txt === lower || txt.includes(lower)) {{
+                            const inner = candidate.querySelector && candidate.querySelector('a[href]');
+                            el = inner || candidate;
+                            break;
+                        }}
+                    }}
+                    if (el) break;
+                }}
+            }}
+
+            if (!el) {{
+                return null;
+            }}
+
+            el.scrollIntoView({{behavior: 'instant', block: 'center', inline: 'center'}});
+            const r = el.getBoundingClientRect();
+            const x = r.left + r.width / 2;
+            const y = r.top + r.height / 2;
+            if (x < 0 || y < 0 || x > window.innerWidth || y > window.innerHeight) {{
+                return null;
+            }}
+            return JSON.stringify({{x: x, y: y, tag: el.tagName.toLowerCase()}});
+        }})()
+        """
+        res = await self.evaluate(js_code)
+        if not res or res == "null":
+            return f"Element not found or off-viewport for target: '{target}'"
+
+        info = json.loads(res)
+        x, y = info["x"], info["y"]
+
+        await self.call("Input.dispatchMouseEvent", {
+            "type": "mouseMoved", "x": x, "y": y,
+        })
+        for ev_type in ("mousePressed", "mouseReleased"):
+            await self.call("Input.dispatchMouseEvent", {
+                "type": ev_type, "x": x, "y": y,
+                "button": "left", "clickCount": 1,
+            })
+        await asyncio.sleep(0.5)
+        return f"Real-clicked <{info['tag']}> at ({x:.0f}, {y:.0f}) for '{target}'"
+
     async def type_text(self, target: str, text: str, clear: bool = False, press_enter: bool = False) -> str:
         """Focus input/textarea and type text into it."""
         js_code = f"""
@@ -1063,4 +1149,3 @@ class CDPClient:
         if self.proc:
             self.proc.terminate()
             self.proc = None
-

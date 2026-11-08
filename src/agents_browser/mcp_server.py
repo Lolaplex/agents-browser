@@ -114,6 +114,24 @@ async def browser_click(target: str) -> str:
 
 
 @mcp.tool()
+async def browser_real_click(target: str) -> str:
+    """Trusted mouse click at element coordinates via CDP Input domain.
+
+    Use when browser_click's synthetic DOM events are not enough: reaches into
+    cross-origin iframes (e.g. PayPal smart buttons) and counts as a user
+    gesture, so popup windows are allowed.
+
+    Parameters:
+    - target: Ref index (e.g. '@1'), CSS selector, or matching text.
+    """
+    try:
+        client = get_client()
+        return await client.real_click(target)
+    except Exception as e:
+        return f"Error real-clicking element: {e}"
+
+
+@mcp.tool()
 async def browser_type(target: str, text: str, clear: bool = False, press_enter: bool = False) -> str:
     """Focus an input/textarea element and type text into it.
 
