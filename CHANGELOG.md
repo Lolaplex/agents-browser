@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Standalone CLI with full MCP parity.** Every `browser_*` tool now has a shell verb: `open`, `snapshot` (`-i` interactive-only, `-d` diff), `click`, `type`, `fill`, `select`, `scroll`, `back`, `reload`, `wait`, `find`, `tabs`, `switch-tab`, `read`, `scrape`, `screenshot`, `audit`, `inspect`, `headless`, `close`, and `skills`. The background browser keeps the active tab and the `@ref` indices across separate invocations.
+- `--help-json` declares `side_effects` for every CLI verb, so the harness classifies a read as read-only and an action as mutating.
+- `click` checks visibility, disabled state, and `elementFromPoint` hit-testing before it acts, so a covering modal is reported instead of silently swallowed.
+
 ## [0.46.0] - 2026-10-20
 
 ### Added

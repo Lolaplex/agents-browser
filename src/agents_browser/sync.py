@@ -21,13 +21,13 @@ RULE_FILENAME = "agents-browser.mdc"
 
 ALWAYS_ON_BODY = """# Browser Control (`agents-browser`)
 
-- **Zero-Node Headless CDP**: ALWAYS use MCP `agents-browser` instead of spawning Playwright/Puppeteer/Node or writing ad-hoc terminal scripts. Headless by default (`--headless=new`). Pass `visible=True` or `browser_system_open` only when explicitly requested.
+- **Zero-Node Headless CDP (MCP & Standalone CLI)**: ALWAYS use `agents-browser` (MCP `browser_*` tools or CLI `agents-browser <cmd>`) instead of spawning Playwright/Puppeteer/Node or writing ad-hoc terminal scripts. Headless by default (`--headless=new`). Pass `visible=True` / `--visible` or `browser_system_open` only when explicitly requested.
 - **Task-Adaptive Tool Selection (Pick the Right Tool Per Use Case)**:
-  - *Research & Reading*: `browser_search(query)`, `browser_read_article()` (clean distraction-free markdown), `browser_extract_pdf()`, `browser_fetch()`.
-  - *Web Automation & Forms*: `browser_open` → `browser_snapshot()` (indexed `@1`, `@2` refs) → `browser_click`, `browser_type`, `browser_select`, `browser_fill_form`, `browser_scroll(target=...)`.
-  - *Data Scraping & Tables*: `browser_scrape(mode='table'|'links'|'text')`, `browser_download()`.
-  - *UI Testing & Frontend Dev*: `browser_audit()` (console errors & overflow check), `browser_inspect()`, `browser_get_styles()`, `browser_get_layout()`, `browser_set_viewport(preset='mobile'|'desktop')`.
-  - *Visual Proofs & Demos*: `browser_screenshot()` (PNG), `browser_record()` (MP4 video/screencast)."""
+  - *Research & Reading*: `browser_search(query)` (`search`), `browser_read_article()` (`read` — clean distraction-free markdown), `browser_extract_pdf()` (`extract-pdf`), `browser_fetch()` (`fetch`).
+  - *Web Automation & Forms*: `browser_open` (`open`) → `browser_snapshot(interactive_only=True)` (`snapshot -i` for compact `@1`, `@2` refs) → `browser_click` (`click` with hit-test occlusion check), `browser_type` (`type`), `browser_select` (`select`), `browser_fill_form` (`fill`), `browser_scroll` (`scroll`), `browser_snapshot(diff=True)` (`snapshot -d` for delta changes).
+  - *Data Scraping & Tables*: `browser_scrape(mode='table'|'links'|'text')` (`scrape`), `browser_download()` (`download`).
+  - *UI Testing & Frontend Dev*: `browser_audit()` (`audit` — console errors & overflow check), `browser_inspect()` (`inspect`), `browser_get_styles()` (`styles`), `browser_get_layout()` (`layout`), `browser_set_viewport(preset='mobile'|'desktop')` (`viewport`).
+  - *Visual Proofs & Demos*: `browser_screenshot()` (`screenshot` PNG), `browser_record()` (`record` MP4 video/screencast)."""
 
 
 def _agents_home() -> Path:

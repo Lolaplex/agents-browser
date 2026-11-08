@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import io
 import json
 import os
@@ -107,17 +108,34 @@ class CDPClient:
     def __init__(
         self,
         host: str = "127.0.0.1",
-        port: int = 9222,
+        port: Optional[int] = None,
         user_data_dir: Optional[str] = None,
         headless: Optional[bool] = None,
+        session: Optional[str] = None,
     ):
+        self.session = (session or os.environ.get("AGENTS_BROWSER_SESSION", "")).strip()
         self.host = host
-        self.port = port
-        self.user_data_dir = (
-            Path(user_data_dir)
-            if user_data_dir
-            else Path.home() / ".agents" / "browser"
-        )
+        base_dir = Path.home() / ".agents" / "browser"
+        if user_data_dir:
+            self.user_data_dir = Path(user_data_dir)
+        elif self.session and self.session != "default":
+            safe_sess = "".join(c if c.isalnum() or c in ("-", "_") else "_" for c in self.session)
+            self.user_data_dir = base_dir / "sessions" / safe_sess
+        else:
+            self.user_data_dir = base_dir
+
+        if port is not None:
+            self.port = int(port)
+        elif os.environ.get("AGENTS_BROWSER_PORT"):
+            self.port = int(os.environ["AGENTS_BROWSER_PORT"])
+        elif self.session and self.session != "default":
+            h = int(hashlib.sha256(self.session.encode("utf-8")).hexdigest()[:8], 16)
+            self.port = 9223 + (h % 500)
+        else:
+            self.port = 9222
+
+        self._state_file = self.user_data_dir / "session_state.json"
+
         if headless is None:
             # Headless background mode by default unless AGENTS_BROWSER_HEADLESS=0/false
             env_val = os.environ.get("AGENTS_BROWSER_HEADLESS", "1").strip().lower()
@@ -131,10 +149,10 @@ class CDPClient:
         self._listener_task: Optional[asyncio.Task] = None
         self._current_target_id: Optional[str] = None
         self._event_listeners: Dict[str, List[Callable[[Dict[str, Any]], None]]] = {}
+        if not self._state_file.parent.exists():
+            self._state_file.parent.mkdir(parents=True, exist_ok=True)
         self.downloads_dir = self.user_data_dir / "downloads"
-        self.downloads_dir.mkdir(parents=True, exist_ok=True)
         self.recordings_dir = self.user_data_dir / "recordings"
-        self.recordings_dir.mkdir(parents=True, exist_ok=True)
         self.console_logs: List[Dict[str, Any]] = []
         self.network_logs: List[Dict[str, Any]] = []
         self._last_download_info: Optional[Dict[str, Any]] = None
@@ -142,6 +160,25 @@ class CDPClient:
         self._recording_frames: List[str] = []
         self._recording_fps: int = 15
         self._recording_listener: Optional[Callable[[Dict[str, Any]], None]] = None
+        self._last_snapshot_items: List[str] = []
+        self._light_mode: bool = False
+
+    def _load_session_state(self) -> Dict[str, Any]:
+        try:
+            if self._state_file.is_file():
+                return json.loads(self._state_file.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+        return {}
+
+    def _save_session_state(self, **updates: Any) -> None:
+        try:
+            self.user_data_dir.mkdir(parents=True, exist_ok=True)
+            state = self._load_session_state()
+            state.update(updates)
+            self._state_file.write_text(json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8")
+        except Exception:
+            pass
 
     def add_event_listener(self, method: str, listener: Callable[[Dict[str, Any]], None]) -> None:
         """Register an event listener callback for a CDP event method name."""
@@ -248,7 +285,20 @@ class CDPClient:
             return getattr(self.ws.state, "name", "") == "OPEN"
         return getattr(self.ws, "open", True) and not getattr(self.ws, "closed", False)
 
-    async def connect(self, target_id: Optional[str] = None) -> None:
+    async def connect(self, target_id: Optional[str] = None, light: bool = False) -> None:
+        saved_state = self._load_session_state()
+        if not target_id:
+            target_id = saved_state.get("target_id")
+        saved_ws = saved_state.get("ws_url")
+        if light and saved_ws:
+            try:
+                self._current_target_id = target_id
+                self.ws = await websockets.connect(saved_ws, max_size=50_000_000, open_timeout=1.0)
+                self._listener_task = asyncio.create_task(self._listen_loop())
+                return
+            except Exception:
+                pass
+
         self.ensure_browser_running()
         targets = self._get_targets()
         page_targets = [t for t in targets if t.get("type") == "page"]
@@ -275,8 +325,12 @@ class CDPClient:
             await self.close_ws()
 
         self._current_target_id = selected.get("id")
+        self._save_session_state(target_id=self._current_target_id, ws_url=ws_url)
         self.ws = await websockets.connect(ws_url, max_size=50_000_000)
         self._listener_task = asyncio.create_task(self._listen_loop())
+
+        if light:
+            return
 
         # Enable core domains
         await self.call("Page.enable")
@@ -415,7 +469,7 @@ class CDPClient:
 
     async def call(self, method: str, params: Optional[Dict[str, Any]] = None, timeout: float = 15.0) -> Any:
         if not self._is_ws_open():
-            await self.connect(self._current_target_id)
+            await self.connect(self._current_target_id, light=self._light_mode)
 
         self._msg_id += 1
         msg_id = self._msg_id
@@ -572,9 +626,15 @@ class CDPClient:
             return None
         return val.get("description", str(val))
 
-    async def snapshot(self) -> str:
-        """Extract a structured text view of page, headings, and interactive elements with index refs (@1, @2)."""
-        await self.auto_dismiss_consent()
+    async def snapshot(self, interactive_only: bool = False, diff: bool = False) -> str:
+        """Extract a structured text view of page, headings, and interactive elements with index refs (@1, @2).
+
+        Parameters:
+        - interactive_only: If True, returns only the compact list of interactive `@ref` elements (saves ~70% tokens).
+        - diff: If True, compares against the previous snapshot and shows only added/changed/removed elements.
+        """
+        if not self._light_mode:
+            await self.auto_dismiss_consent()
         js_code = """
         (() => {
             if (!document.getElementById('__agents_browser_style__')) {
@@ -618,7 +678,8 @@ class CDPClient:
 
                 // Resolve YouTube/WebComponent containers to actual video link
                 let target = el;
-                if (/^yt[d]-/.test(el.tagName.toLowerCase())) {
+                const elTag = String(el.tagName || el.nodeName || '').toLowerCase();
+                if (/^yt[d]-/.test(elTag)) {
                     const link = el.querySelector('a#video-title-link, a#video-title, a[href*="/watch"], a[href*="/results"]') || el.querySelector('a[href]');
                     if (!link) return;
                     target = link;
@@ -630,7 +691,9 @@ class CDPClient:
                 if (!visible) return;
 
                 window.__agents_refs[refCount] = target;
-                const tag = target.tagName.toLowerCase();
+                const tag = String(target.tagName || target.nodeName || 'element').toLowerCase();
+                const isDisabled = !!(target.disabled || target.getAttribute('aria-disabled') === 'true');
+                const disBadge = isDisabled ? ' [disabled]' : '';
                 let desc = "";
 
                 if (tag === 'video') {
@@ -644,21 +707,22 @@ class CDPClient:
                     desc = `Link: "${text.slice(0, 80)}"${href ? ' -> ' + href : ''}`;
                 } else if (tag === 'button' || target.getAttribute('role') === 'button') {
                     const text = (target.innerText || target.getAttribute('aria-label') || target.value || '').trim();
-                    desc = `Button: "${text.slice(0, 60)}"`;
+                    desc = `Button${disBadge}: "${text.slice(0, 60)}"`;
                 } else if (tag === 'input') {
                     const type = target.type || 'text';
                     const ph = target.placeholder ? ` placeholder="${target.placeholder}"` : '';
                     const val = target.value ? ` value="${target.value}"` : '';
-                    desc = `Input[${type}]: ${ph}${val}`;
+                    const chk = (type === 'checkbox' || type === 'radio') ? (target.checked ? ' [checked]' : ' [unchecked]') : '';
+                    desc = `Input[${type}]${disBadge}${chk}: ${ph}${val}`;
                 } else if (tag === 'textarea') {
                     const ph = target.placeholder ? ` placeholder="${target.placeholder}"` : '';
-                    desc = `Textarea: ${ph} (value: "${target.value || ''}")`;
+                    desc = `Textarea${disBadge}: ${ph} (value: "${target.value || ''}")`;
                 } else if (tag === 'select') {
                     const sel = target.selectedOptions[0]?.text || '';
-                    desc = `Select: current="${sel}"`;
+                    desc = `Select${disBadge}: current="${sel}"`;
                 } else {
                     const text = (target.innerText || target.title || target.getAttribute('aria-label') || '').trim();
-                    desc = `${tag}: "${text.slice(0, 60)}"`;
+                    desc = `${tag}${disBadge}: "${text.slice(0, 60)}"`;
                 }
 
                 result.interactive.push(`[@${refCount}] ${desc}`);
@@ -677,11 +741,60 @@ class CDPClient:
         if not isinstance(data, dict):
             return f"Failed to capture snapshot: {data}"
 
+        current_interactive: List[str] = list(data.get("interactive") or [])
+
+        # Strip [@N] prefix when comparing semantic element changes across snapshots
+        def _strip_ref(s: str) -> str:
+            idx = s.find("] ")
+            return s[idx + 2:] if idx != -1 else s
+
+        prev_items = self._last_snapshot_items
+        if not prev_items:
+            saved = self._load_session_state()
+            prev_items = list(saved.get("last_interactive") or [])
+
+        self._last_snapshot_items = current_interactive
+        self._save_session_state(
+            target_id=self._current_target_id,
+            last_url=data.get("url", ""),
+            last_title=data.get("title", ""),
+            last_interactive=current_interactive,
+        )
+
         lines = [
             f"# {data.get('title', 'Untitled')}",
             f"**URL**: {data.get('url')}",
             "",
         ]
+
+        if diff and prev_items:
+            prev_sigs = {_strip_ref(x) for x in prev_items}
+            curr_sigs = {_strip_ref(x) for x in current_interactive}
+            added = [item for item in current_interactive if _strip_ref(item) not in prev_sigs]
+            removed = [item for item in prev_items if _strip_ref(item) not in curr_sigs]
+            unchanged_count = len(current_interactive) - len(added)
+
+            lines.append(f"### Snapshot Diff (+{len(added)} new/changed, -{len(removed)} removed, {unchanged_count} unchanged)")
+            if added:
+                lines.append("#### Added / Updated Interactive Elements:")
+                for item in added:
+                    lines.append(f"+ {item}")
+            if removed:
+                lines.append("#### Removed Elements:")
+                for item in removed[:15]:
+                    lines.append(f"- {_strip_ref(item)}")
+            if not added and not removed:
+                lines.append("No interactive element changes since last snapshot.")
+            return "\n".join(lines)
+
+        if interactive_only:
+            if current_interactive:
+                lines.append("### Interactive Elements")
+                for item in current_interactive:
+                    lines.append(f"- {item}")
+            else:
+                lines.append("No interactive elements found on page.")
+            return "\n".join(lines)
 
         if data.get("headings"):
             lines.append("### Headings")
@@ -689,9 +802,9 @@ class CDPClient:
                 lines.append(f"- {h}")
             lines.append("")
 
-        if data.get("interactive"):
+        if current_interactive:
             lines.append("### Interactive Elements (use ref like '@1', CSS selector, or visible text)")
-            for item in data["interactive"]:
+            for item in current_interactive:
                 lines.append(f"- {item}")
             lines.append("")
 
@@ -701,15 +814,21 @@ class CDPClient:
 
         return "\n".join(lines)
 
-    async def click(self, target: str) -> str:
-        """Click element by '@1' ref index, CSS selector, or matching text."""
+    async def click(self, target: str, force: bool = False) -> str:
+        """Click element by '@1' ref index, CSS selector, or matching text.
+
+        Performs actionability & occlusion checks (disabled state, viewport visibility, and
+        `elementFromPoint` hit-testing for covering modals/banners) unless `force=True`.
+        """
         js_code = f"""
         (() => {{
             const t = {json.dumps(target.strip())};
+            const forceClick = {json.dumps(bool(force))};
             let el = null;
+            const refMatch = t.match(/^@?(?:e|ref=)?(\d+)$/i);
 
-            if (t.startsWith('@')) {{
-                const idx = parseInt(t.slice(1), 10);
+            if (refMatch) {{
+                const idx = parseInt(refMatch[1], 10);
                 if (window.__agents_refs && window.__agents_refs[idx]) {{
                     el = window.__agents_refs[idx];
                 }}
@@ -740,10 +859,36 @@ class CDPClient:
             }}
 
             if (!el) {{
-                return `Element not found for target: '${{t}}'`;
+                return `Element not found for target: '${{t}}'. Run snapshot first to refresh @refs.`;
             }}
 
-            el.scrollIntoView({{behavior: 'smooth', block: 'center', inline: 'center'}});
+            if (!forceClick && (el.disabled || el.getAttribute('aria-disabled') === 'true')) {{
+                return `Click refused: element <${{el.tagName.toLowerCase()}}> ('${{t}}') is disabled.`;
+            }}
+
+            el.scrollIntoView({{behavior: 'instant', block: 'center', inline: 'center'}});
+            const rect = el.getBoundingClientRect();
+            const style = window.getComputedStyle(el);
+
+            if (!forceClick && (rect.width === 0 || rect.height === 0 || style.display === 'none' || style.visibility === 'hidden')) {{
+                return `Click refused: element <${{el.tagName.toLowerCase()}}> ('${{t}}') is hidden or has 0x0 size.`;
+            }}
+
+            // Hit-test at center point to detect covering overlays / consent modals
+            if (!forceClick && rect.width > 0 && rect.height > 0) {{
+                const cx = Math.max(0, Math.min(window.innerWidth - 1, Math.round(rect.left + rect.width / 2)));
+                const cy = Math.max(0, Math.min(window.innerHeight - 1, Math.round(rect.top + rect.height / 2)));
+                const topEl = document.elementFromPoint(cx, cy);
+                if (topEl && topEl !== el && !el.contains(topEl) && !topEl.contains(el)) {{
+                    // Allow associated <label> or same-form wrapper
+                    const isLabelFor = (topEl.tagName === 'LABEL' && topEl.control === el);
+                    if (!isLabelFor) {{
+                        const blockerTag = `<${{topEl.tagName.toLowerCase()}}${{topEl.id ? '#' + topEl.id : ''}}${{topEl.className && typeof topEl.className === 'string' ? '.' + topEl.className.trim().split(/\\s+/).slice(0, 2).join('.') : ''}}>`;
+                        return `Click blocked: target <${{el.tagName.toLowerCase()}}> ('${{t}}') is covered at (${{cx}}, ${{cy}}) by ${{blockerTag}}. Dismiss the covering element/dialog or pass force=True.`;
+                    }}
+                }}
+            }}
+
             el.classList.add('agents-target');
             setTimeout(() => el.classList.remove('agents-target'), 800);
 
@@ -773,9 +918,10 @@ class CDPClient:
             const shouldClear = {json.dumps(clear)};
             const shouldEnter = {json.dumps(press_enter)};
             let el = null;
+            const refMatch = t.match(/^@?(?:e|ref=)?(\d+)$/i);
 
-            if (t.startsWith('@')) {{
-                const idx = parseInt(t.slice(1), 10);
+            if (refMatch) {{
+                const idx = parseInt(refMatch[1], 10);
                 if (window.__agents_refs && window.__agents_refs[idx]) {{
                     el = window.__agents_refs[idx];
                 }}
@@ -836,9 +982,10 @@ class CDPClient:
             const t = {json.dumps(target.strip())};
             const val = {json.dumps(value.strip())};
             let el = null;
+            const refMatch = t.match(/^@?(?:e|ref=)?(\d+)$/i);
 
-            if (t.startsWith('@')) {{
-                const idx = parseInt(t.slice(1), 10);
+            if (refMatch) {{
+                const idx = parseInt(refMatch[1], 10);
                 if (window.__agents_refs && window.__agents_refs[idx]) {{
                     el = window.__agents_refs[idx];
                 }}
@@ -884,8 +1031,9 @@ class CDPClient:
             (() => {{
                 const t = {json.dumps(target.strip())};
                 let el = null;
-                if (t.startsWith('@')) {{
-                    const idx = parseInt(t.slice(1), 10);
+                const refMatch = t.match(/^@?(?:e|ref=)?(\d+)$/i);
+                if (refMatch) {{
+                    const idx = parseInt(refMatch[1], 10);
                     if (window.__agents_refs && window.__agents_refs[idx]) {{
                         el = window.__agents_refs[idx];
                     }}
@@ -1050,12 +1198,13 @@ class CDPClient:
     async def list_tabs(self) -> List[Dict[str, str]]:
         """List active browser tabs."""
         targets = self._get_targets()
+        saved_id = self._current_target_id or self._load_session_state().get("target_id")
         return [
             {
                 "id": t.get("id", ""),
                 "title": t.get("title", ""),
                 "url": t.get("url", ""),
-                "active": " (CURRENT)" if t.get("id") == self._current_target_id else "",
+                "active": " (CURRENT)" if t.get("id") == saved_id else "",
             }
             for t in targets
             if t.get("type") == "page"
@@ -1065,6 +1214,7 @@ class CDPClient:
         """Switch active CDP focus to another tab ID."""
         await self.connect(target_id)
         await self.call("Target.activateTarget", {"targetId": target_id})
+        self._save_session_state(target_id=target_id)
         return f"Switched to tab: {target_id}"
 
     # --- High-Level Built-in Actions ---
@@ -1517,8 +1667,9 @@ class CDPClient:
             (() => {{
                 const t = {json.dumps(target)};
                 let el = null;
-                if (t.startsWith('@')) {{
-                    const idx = parseInt(t.slice(1), 10);
+                const refMatch = t.match(/^@?(?:e|ref=)?(\d+)$/i);
+                if (refMatch) {{
+                    const idx = parseInt(refMatch[1], 10);
                     if (window.__agents_refs && window.__agents_refs[idx]) {{
                         el = window.__agents_refs[idx];
                     }}
@@ -1661,7 +1812,6 @@ class CDPClient:
         ]
         return "\n".join(lines)
 
-
     async def get_styles(self, target: str, properties: Optional[List[str]] = None) -> str:
         """Inspect computed CSS styles of an element (@ref, selector, or text)."""
         props_json = json.dumps(properties) if properties else "null"
@@ -1669,8 +1819,9 @@ class CDPClient:
         (() => {{
             const t = {json.dumps(target.strip())};
             let el = null;
-            if (t.startsWith('@')) {{
-                const idx = parseInt(t.slice(1), 10);
+            const refMatch = t.match(/^@?(?:e|ref=)?(\d+)$/i);
+            if (refMatch) {{
+                const idx = parseInt(refMatch[1], 10);
                 if (window.__agents_refs && window.__agents_refs[idx]) el = window.__agents_refs[idx];
             }}
             if (!el) {{
@@ -1700,7 +1851,7 @@ class CDPClient:
 
             const res = {{
                 target: t,
-                element: `<${{el.tagName.toLowerCase()}}${{el.id ? '#' + el.id : ''}}${{el.className ? '.' + String(el.className).trim().split(/\s+/).join('.') : ''}}>`,
+                element: `<${{el.tagName.toLowerCase()}}${{el.id ? '#' + el.id : ''}}${{el.className ? '.' + String(el.className).trim().split(/\\s+/).join('.') : ''}}>`,
                 styles: {{}}
             }};
 
@@ -1734,8 +1885,9 @@ class CDPClient:
         (() => {{
             const t = {json.dumps(target.strip())};
             let el = null;
-            if (t.startsWith('@')) {{
-                const idx = parseInt(t.slice(1), 10);
+            const refMatch = t.match(/^@?(?:e|ref=)?(\d+)$/i);
+            if (refMatch) {{
+                const idx = parseInt(refMatch[1], 10);
                 if (window.__agents_refs && window.__agents_refs[idx]) el = window.__agents_refs[idx];
             }}
             if (!el) {{
@@ -1775,7 +1927,7 @@ class CDPClient:
 
             const res = {{
                 target: t,
-                element: `<${{el.tagName.toLowerCase()}}${{el.id ? '#' + el.id : ''}}${{el.className ? '.' + String(el.className).trim().split(/\s+/).join('.') : ''}}>`,
+                element: `<${{el.tagName.toLowerCase()}}${{el.id ? '#' + el.id : ''}}${{el.className ? '.' + String(el.className).trim().split(/\\s+/).join('.') : ''}}>`,
                 rect: {{
                     x: Math.round(rect.x),
                     y: Math.round(rect.y),
@@ -1820,8 +1972,9 @@ class CDPClient:
         (() => {{
             const t = {json.dumps(target.strip())};
             let el = null;
-            if (t.startsWith('@')) {{
-                const idx = parseInt(t.slice(1), 10);
+            const refMatch = t.match(/^@?(?:e|ref=)?(\d+)$/i);
+            if (refMatch) {{
+                const idx = parseInt(refMatch[1], 10);
                 if (window.__agents_refs && window.__agents_refs[idx]) el = window.__agents_refs[idx];
             }}
             if (!el) {{
@@ -1850,7 +2003,7 @@ class CDPClient:
                 attrs[a.name] = a.value;
             }}
 
-            const parentInfo = el.parentElement ? `<${{el.parentElement.tagName.toLowerCase()}}${{el.parentElement.id ? '#' + el.parentElement.id : ''}}${{el.parentElement.className ? '.' + String(el.parentElement.className).trim().split(/\s+/).slice(0, 2).join('.') : ''}}>` : 'none';
+            const parentInfo = el.parentElement ? `<${{el.parentElement.tagName.toLowerCase()}}${{el.parentElement.id ? '#' + el.parentElement.id : ''}}${{el.parentElement.className ? '.' + String(el.parentElement.className).trim().split(/\\s+/).slice(0, 2).join('.') : ''}}>` : 'none';
             const childTags = Array.from(el.children).slice(0, 5).map(c => c.tagName.toLowerCase());
 
             const isVisible = (
@@ -1873,10 +2026,10 @@ class CDPClient:
 
             return JSON.stringify({{
                 target: t,
-                element: `<${{el.tagName.toLowerCase()}}${{el.id ? '#' + el.id : ''}}${{el.className ? '.' + String(el.className).trim().split(/\s+/).join('.') : ''}}>`,
+                element: `<${{el.tagName.toLowerCase()}}${{el.id ? '#' + el.id : ''}}${{el.className ? '.' + String(el.className).trim().split(/\\s+/).join('.') : ''}}>`,
                 tag: el.tagName.toLowerCase(),
                 id: el.id || null,
-                classes: el.className ? String(el.className).trim().split(/\s+/) : [],
+                classes: el.className ? String(el.className).trim().split(/\\s+/) : [],
                 text: txt || null,
                 attributes: attrs,
                 parent: parentInfo,
@@ -1927,7 +2080,7 @@ class CDPClient:
                     if (el.offsetParent === null) continue;
                     const r = el.getBoundingClientRect();
                     if (r.right > winW + 2) {
-                        const tag = `<${el.tagName.toLowerCase()}${el.id ? '#' + el.id : ''}${el.className ? '.' + String(el.className).trim().split(/\s+/).slice(0, 2).join('.') : ''}>`;
+                        const tag = `<${el.tagName.toLowerCase()}${el.id ? '#' + el.id : ''}${el.className ? '.' + String(el.className).trim().split(/\\s+/).slice(0, 2).join('.') : ''}>`;
                         overflowElements.push({ element: tag, right: Math.round(r.right), excessPx: Math.round(r.right - winW) });
                         if (overflowElements.length >= 5) break;
                     }
@@ -2207,7 +2360,7 @@ class CDPClient:
 
     async def close(self) -> None:
         await self.close_ws()
+        self._close_existing_server()
         if self.proc:
             self.proc.terminate()
             self.proc = None
-

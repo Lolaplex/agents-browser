@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <strong>Ultra-fast, zero-Node Python CDP Browser MCP for AI coding agents.</strong><br>
+  <strong>Ultra-fast, zero-Node Python CDP Browser MCP & CLI for AI coding agents.</strong><br>
   Connects directly to your local Chrome, Edge, or Brave instance via native CDP. Headless by default.
 </p>
 
@@ -45,9 +45,11 @@ Traditional browser automation MCPs (Playwright, Puppeteer) introduce massive fr
 **`agents-browser` connects directly to your installed browser via native CDP:**
 - **Headless by Default:** Silent `--headless=new` background automation. Visible window only on explicit ask.
 - **Zero Node.js / Zero 300MB Downloads:** Pure lightweight Python (`FastMCP` + `websockets`).
-- **Indexed `@ref` Interactive Snapshots:** Generates clean markdown with compact element references (`[@1] Button: Login`, `[@2] Input: Search`).
+- **Dual-Mode (Full MCP & Standalone CLI Parity):** Drive the browser via MCP tools (`browser_*`) OR one command at a time from the shell (`agents-browser open`, `snapshot -i`, `click @1`, `snapshot -d`, `audit`). Active tabs and `@ref` indices persist across separate CLI invocations.
+- **Indexed `@ref` Interactive Snapshots & Diffs:** Generates clean markdown with compact element references (`[@1] Button: Login`, `[@2] Input: Search`), interactive-only mode (`-i`), and delta diff mode (`-d`).
+- **Hit-Test Actionability & Occlusion Checks:** Verifies target visibility, disabled state, and `elementFromPoint` hit-testing before clicking so covering modals/banners are reported instead of silently ignored.
 - **High-Level Built-in Tools:** Web search, clean reader-mode extraction, table scraping, batch form filling, dropdown selection, viewport scrolling, in-page search, and network/DOM stability detection.
-- **Persistent Sessions (`~/.agents/browser`):** Preserves cookies, sessions, and saved logins across turns.
+- **Persistent & Isolated Sessions (`~/.agents/browser`):** Preserves cookies and logins across turns, or isolates concurrent agents via `--session <name>`.
 - **Universal Multi-IDE Auto-Config:** Plugs into Cursor, Antigravity, Claude Desktop, and Zed in 1 second.
 
 ---
@@ -58,9 +60,9 @@ Traditional browser automation MCPs (Playwright, Puppeteer) introduce massive fr
  ┌─────────────────────────────────────────────────────────────┐
  │                     CODING AGENT / IDE                      │
  │     Cursor · Antigravity · Claude Code · Windsurf · Zed     │
- └──────────────────────────────┬──────────────────────────────┘
-                                │  FastMCP stdio
-                                ▼
+ └──────────────┬───────────────────────────────┬──────────────┘
+                │ FastMCP stdio                 │ Standalone Shell CLI
+                ▼                               ▼
  ┌─────────────────────────────────────────────────────────────┐
  │                  AGENTS-BROWSER CDP CLIENT                  │
  │    Pure Python WebSocket · Port 9222 · Zero Node Runtime    │
@@ -69,32 +71,64 @@ Traditional browser automation MCPs (Playwright, Puppeteer) introduce massive fr
                                 ▼
  ┌─────────────────────────────────────────────────────────────┐
  │     LOCAL BROWSER (Chrome / Edge / Brave) — headless=new    │
- │    Persistent Profile: ~/.agents/browser                    │
+ │    Persistent Profile: ~/.agents/browser (+ --session)      │
  └──────────────┬───────────────────────────────┬──────────────┘
                 │                               │
                 ▼                               ▼
  ┌─────────────────────────────┐ ┌─────────────────────────────┐
  │    INDEXED SNAPSHOTS        │ │      HIGH-LEVEL TOOLS       │
- │  [@1] Button: Sign In       │ │  browser_search             │
- │  [@2] Input: Search         │ │  browser_read_article       │
- │  Compact Interactive Tokens │ │  browser_fill_form          │
+ │  [@1] Button: Sign In       │ │  browser_search / search    │
+ │  [@2] Input: Search         │ │  browser_read_article / read│
+ │  -i (interactive) / -d (diff│ │  browser_audit / audit      │
  └─────────────────────────────┘ └─────────────────────────────┘
 ```
 
 ---
 
-## CLI Reference
+## Standalone CLI Reference (Full Parity without MCP)
+
+Drive the browser step-by-step from any shell or non-MCP agent. The background headless browser stays open and remembers the active tab and `@ref` indices across calls:
+
+```bash
+agents-browser open https://example.com
+agents-browser snapshot -i                  # compact interactive elements (@1, @2, ...)
+agents-browser click @1                     # hit-tested click on @1
+agents-browser snapshot -d                  # diff: only elements added/changed/removed
+agents-browser type @2 "search query" --enter
+agents-browser audit                        # check console errors, layout overflow, broken images
+agents-browser close
+```
 
 | Command | Purpose |
 |---------|---------|
 | `agents-browser init` | Plug & Play setup: auto-configures MCP across Cursor, Antigravity, Claude Desktop, Zed |
-| `agents-browser open <URL>` | Navigates headless (add `--visible` for a desktop window) |
+| `agents-browser skills [name]` | Print agent skill instructions (`core`, `browser-browse`, `browser-scrape`, `list`) |
+| `agents-browser open <URL> [--new-tab] [--visible]` | Navigates headless (add `--visible` for a desktop window) |
 | `agents-browser system-open <URL>` | Opens URL in the OS default desktop browser |
+| `agents-browser headless [on\|off]` | Toggle between background headless and visible window |
+| `agents-browser close` | Close the managed CDP browser instance |
+| `agents-browser snapshot [-i] [-d]` | Text outline with `@ref` elements (`-i` interactive-only, `-d` diff since last snapshot) |
+| `agents-browser click <target> [--force]` | Click by `@ref` (`@1`), CSS selector, or text (with occlusion hit-test check) |
+| `agents-browser type <target> <text> [--clear] [--enter]` | Focus and type text into input/textarea |
+| `agents-browser fill <target_or_json> [text] [--submit <ref>]` | Single field fill or batch JSON form fill |
+| `agents-browser select <target> <value>` | Select dropdown `<select>` option by value or text |
+| `agents-browser scroll [dir\|@ref] [amount]` | Scroll page (`down`, `up`, `top`, `bottom`) or scroll `@ref` into view |
+| `agents-browser back` / `reload [--ignore-cache]` | History navigation and page refresh |
+| `agents-browser wait` / `find "<query>"` | Wait for network/DOM stability or search in-page text |
+| `agents-browser tabs` / `switch-tab <id>` | List open tabs and switch active tab focus |
 | `agents-browser search "<query>"` | Performs a web search and prints top 10 organic markdown results |
 | `agents-browser read` | Extracts active web page in clean Reader Mode |
-| `agents-browser snapshot` | Captures text outline with compact indexed `@ref` interactive elements |
-| `agents-browser screenshot --out <file>` | Captures a full or viewport PNG screenshot |
-| `agents-browser serve` | Runs the FastMCP stdio server (default) |
+| `agents-browser scrape [selector] [--mode table\|links\|text\|html]` | Structured data extraction into Markdown |
+| `agents-browser audit` | Developer QA audit: console errors, horizontal overflow, broken images, network errors |
+| `agents-browser inspect <target>` / `styles <target>` / `layout <target>` | Complete element geometry, typography, CSS variables, and box-model inspection |
+| `agents-browser logs [--type error\|console\|network]` | Retrieve buffered console and network logs |
+| `agents-browser viewport <preset\|width> [height]` | Apply responsive presets (`mobile`, `tablet`, `desktop`, `fhd`) |
+| `agents-browser eval "<script>"` | Evaluate JavaScript expression in active tab |
+| `agents-browser screenshot [path] [--full-page]` | Captures a full or viewport PNG screenshot |
+| `agents-browser record [--duration 5] [--out file.mp4]` | Captures MP4/GIF screencast video |
+| `agents-browser download <target>` / `fetch <URL>` / `extract-pdf [target]` | Controlled file download, cookie-authenticated HTTP fetch, or PDF text extraction |
+
+Add `--session <name>` to any command to run isolated parallel browser sessions.
 
 ---
 
@@ -103,7 +137,7 @@ Traditional browser automation MCPs (Playwright, Puppeteer) introduce massive fr
 `agents-browser` adapts dynamically to the developer's specific task without forcing a rigid workflow:
 
 - **Research & Reading:** `browser_search`, `browser_read_article` (distraction-free markdown), `browser_extract_pdf`, `browser_fetch` (fast HTTP using browser cookies).
-- **Web Automation & Forms:** `browser_snapshot` (`@ref` indexing) → `browser_click`, `browser_type`, `browser_select`, `browser_fill_form`, `browser_scroll(target=...)`.
+- **Web Automation & Forms:** `browser_snapshot` (`@ref` indexing, `interactive_only`, `diff`) → `browser_click` (hit-tested), `browser_type`, `browser_select`, `browser_fill_form`, `browser_scroll(target=...)`.
 - **Data Scraping:** `browser_scrape(mode='table'|'links'|'text')`, `browser_download`.
 - **Developer UI Testing & Dev Servers:** `browser_audit` (console errors & horizontal overflow detection), `browser_inspect`, `browser_get_styles`, `browser_get_layout`, `browser_set_viewport`.
 - **Visual Proofs & Demos:** `browser_screenshot` (PNG), `browser_record` / `browser_record_start` + `stop` (MP4 video screencast via local ffmpeg).
@@ -125,8 +159,8 @@ Traditional browser automation MCPs (Playwright, Puppeteer) introduce massive fr
 | | `browser_read_article` | *None* | Extracts clean article markdown, stripping ads, navbars, and banners. |
 | | `browser_extract_pdf` | `url_or_ref`, `save_path`, `max_pages` | Extracts PDF streams via Chrome PDF Viewer or Page.printToPDF with text preview. |
 | | `browser_fetch` | `url`, `method`, `headers`, `json_data`, `body` | Fast non-DOM HTTP/REST client using browser session cookies without rendering overhead. |
-| **Automation** | `browser_snapshot` | *None* | Extract clean text outline with indexed `@ref` element IDs (`@1`, `@2`). |
-| | `browser_click` | `target` | Click element by `@ref` (e.g. `@1`), CSS selector, or matching text. |
+| **Automation** | `browser_snapshot` | `interactive_only`, `diff` | Extract clean text outline with indexed `@ref` element IDs (`@1`, `@2`), interactive-only list, or delta diff. |
+| | `browser_click` | `target`, `force` | Click element by `@ref` (e.g. `@1`), CSS selector, or matching text (with occlusion hit-testing). |
 | | `browser_type` | `target`, `text`, `clear`, `press_enter` | Focus and type text into input/textarea. |
 | | `browser_select` | `target`, `value` | Select dropdown `<select>` option by text, value, or substring. |
 | | `browser_fill_form` | `fields_json`, `submit_selector` | Batch fill form fields and submit in one call. |

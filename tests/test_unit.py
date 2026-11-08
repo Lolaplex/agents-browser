@@ -37,6 +37,57 @@ def test_cdp_client_default_headless():
     assert c.headless is True
 
 
+def test_cdp_session_isolation():
+    from agents_browser.cdp import CDPClient
+    c_default = CDPClient()
+    c_alpha = CDPClient(session="alpha")
+    c_beta = CDPClient(session="beta")
+    assert c_default.port == 9222
+    assert c_alpha.port != 9222
+    assert c_alpha.port != c_beta.port
+    assert c_alpha.user_data_dir.name == "alpha"
+    assert c_alpha.user_data_dir.parent.name == "sessions"
+
+
+def test_session_state_persistence():
+    from agents_browser.cdp import CDPClient
+    with tempfile.TemporaryDirectory() as tmpdir:
+        c = CDPClient(user_data_dir=tmpdir)
+        c._save_session_state(target_id="TAB_123", last_interactive=["[@1] Button: OK"])
+        loaded = c._load_session_state()
+        assert loaded["target_id"] == "TAB_123"
+        assert loaded["last_interactive"] == ["[@1] Button: OK"]
+
+
+def test_help_json_cli_parity():
+    from agents_browser.help_json import help_json
+    spec = help_json()
+    cmds = spec["commands"]
+    expected = [
+        "serve", "init", "sync", "skills", "open", "system-open", "headless", "close",
+        "snapshot", "click", "type", "fill", "select", "scroll", "back", "reload",
+        "wait", "find", "tabs", "switch-tab", "search", "read", "scrape", "screenshot",
+        "download", "fetch", "extract-pdf", "audit", "inspect", "styles", "layout",
+        "logs", "viewport", "eval", "record"
+    ]
+    for cmd in expected:
+        assert cmd in cmds, f"Missing command in help_json: {cmd}"
+        assert "side_effects" in cmds[cmd], f"Missing side_effects on {cmd}"
+
+
+def test_cli_skills_command():
+    import io
+    from contextlib import redirect_stdout
+    from agents_browser.__main__ import main
+
+    f = io.StringIO()
+    with redirect_stdout(f):
+        main(["skills", "core"])
+    out = f.getvalue()
+    assert "Browser Browse Skill" in out
+    assert "agents-browser snapshot -i" in out
+
+
 def test_mcp_tools_registered():
     from agents_browser.mcp_server import mcp
     tools = [t.name for t in mcp._tool_manager.list_tools()]
@@ -147,7 +198,6 @@ def test_cdp_fetch_fast():
         assert "application/json" in res
 
     asyncio.run(_test())
-
 
 
 def test_recordings_dir():

@@ -21,8 +21,8 @@ BROWSER_INSTRUCTIONS = (
     "- CHOOSE THE RIGHT TOOL PER USE CASE (Do not default to one flow for everything):\n"
     "  * Research & Reading: Use `browser_search(query)`, `browser_read_article()` (clean distraction-free Markdown), "
     "`browser_extract_pdf()`, or `browser_fetch()`. Zero DOM/snapshot overhead.\n"
-    "  * Web Interaction & Forms: `browser_open` -> `browser_snapshot()` for compact `@1`, `@2` refs -> "
-    "`browser_click`, `browser_type`, `browser_select`, or `browser_fill_form`. Use `browser_scroll(target='@1')` to bring elements into view.\n"
+    "  * Web Interaction & Forms: `browser_open` -> `browser_snapshot(interactive_only=True)` for compact `@1`, `@2` refs -> "
+    "`browser_click`, `browser_type`, `browser_select`, or `browser_fill_form`. Use `browser_snapshot(diff=True)` after actions to inspect only changes.\n"
     "  * Data Scraping & Tables: `browser_scrape(mode='table'|'links'|'text')` for formatted output, and `browser_download()` for files.\n"
     "  * UI Testing & Local Dev (debug layout/frontend): Use `browser_audit()` for layout overflow & console error healthchecks, "
     "`browser_inspect` / `browser_get_styles` / `browser_get_layout` instead of raw JS eval, and `browser_set_viewport` for responsive tests.\n"
@@ -163,24 +163,30 @@ async def browser_set_headless(headless: bool = True) -> str:
 
 
 @mcp.tool()
-async def browser_snapshot() -> str:
+async def browser_snapshot(interactive_only: bool = False, diff: bool = False) -> str:
     """Capture a clean text snapshot of the current page, headings, and interactive elements with index refs (@1, @2).
 
     PROACTIVE USAGE: Call immediately after `browser_open` or page navigation to inspect the DOM and obtain `@ref` targets.
+    Parameters:
+    - interactive_only: If True, returns only the compact list of interactive `@ref` elements (saves ~70% tokens).
+    - diff: If True, compares against the previous snapshot and shows only added/changed/removed elements.
     """
     try:
         client = get_client()
-        return await client.snapshot()
+        return await client.snapshot(interactive_only=interactive_only, diff=diff)
     except Exception as e:
         return f"Error capturing snapshot: {e}"
 
 
 @mcp.tool()
-async def browser_click(target: str) -> str:
-    """Click an element by its ref index (e.g. '@1'), CSS selector (e.g. '#submit'), or visible text (e.g. 'Login')."""
+async def browser_click(target: str, force: bool = False) -> str:
+    """Click an element by its ref index (e.g. '@1'), CSS selector (e.g. '#submit'), or visible text (e.g. 'Login').
+
+    Performs hit-test occlusion and disabled checks automatically unless `force=True`.
+    """
     try:
         client = get_client()
-        return await client.click(target)
+        return await client.click(target, force=force)
     except Exception as e:
         return f"Error clicking element: {e}"
 
@@ -352,8 +358,6 @@ async def browser_switch_tab(tab_id: str) -> str:
         return await client.switch_tab(tab_id)
     except Exception as e:
         return f"Error switching tab: {e}"
-
-
 
 
 # --- Coder Evaluation, Inspection & Recording Tools ---
