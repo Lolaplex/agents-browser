@@ -14,7 +14,15 @@ from tests.test_unit import (
     test_merge_zed_settings,
     test_find_browser_executable,
     test_cdp_client_default_headless,
+    test_cdp_session_isolation,
+    test_session_state_persistence,
+    test_help_json_cli_parity,
+    test_cli_skills_command,
     test_mcp_tools_registered,
+    test_downloads_dir,
+    test_event_listeners,
+    test_recordings_dir,
+    test_client_init_fields,
 )
 
 
@@ -31,8 +39,32 @@ class TestAgentsBrowser(unittest.TestCase):
     def test_headless_default(self):
         test_cdp_client_default_headless()
 
+    def test_session_isolation(self):
+        test_cdp_session_isolation()
+
+    def test_state_persistence(self):
+        test_session_state_persistence()
+
+    def test_help_json_parity(self):
+        test_help_json_cli_parity()
+
+    def test_skills_cli(self):
+        test_cli_skills_command()
+
     def test_mcp_tools(self):
         test_mcp_tools_registered()
+
+    def test_downloads(self):
+        test_downloads_dir()
+
+    def test_listeners(self):
+        test_event_listeners()
+
+    def test_recordings(self):
+        test_recordings_dir()
+
+    def test_client_fields(self):
+        test_client_init_fields()
 
     def test_cli_version(self):
         from agents_browser.__main__ import main

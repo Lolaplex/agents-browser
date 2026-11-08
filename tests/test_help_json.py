@@ -19,8 +19,12 @@ _spec.loader.exec_module(mod)
 def test_help_json_shape():
     data = mod.help_json()
     assert data["name"] == "agents-browser"
-    assert data["version"] == "0.45.0"
+    from agents_browser import __version__
+    assert data["version"] == __version__
     assert "open" in data["commands"]
     assert "snapshot" in data["commands"]
+    assert "download" in data["commands"]
+    assert "fetch" in data["commands"]
+    assert "extract-pdf" in data["commands"]
     assert "--help-json" in data["flags"]
     json.dumps(data)

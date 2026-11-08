@@ -47,6 +47,36 @@ async def run_test():
         b64 = await client.screenshot(full_page=False)
         assert len(b64) > 1000
 
+        # 7. Test Fast Fetch (non-DOM)
+        print("\n7. Testing Fast Non-DOM Fetch...")
+        fetch_res = await client.fetch("https://httpbin.org/get")
+        assert "HTTP 200 GET" in fetch_res
+        assert "application/json" in fetch_res
+
+        # 8. Test Download via Click
+        print("\n8. Testing Download via Click...")
+        import tempfile
+        from pathlib import Path
+        td = Path(tempfile.mkdtemp())
+        await client.open("about:blank")
+        await client.evaluate('''
+            const a = document.createElement('a');
+            a.id = 'dl-btn';
+            a.href = 'data:text/plain;charset=utf-8,' + encodeURIComponent('CDP Download Integration Test');
+            a.download = 'test_dl.txt';
+            document.body.appendChild(a);
+        ''')
+        dl_res = await client.download("#dl-btn", dest_path=str(td))
+        assert "completed successfully" in dl_res.lower()
+        assert (td / "test_dl.txt").exists()
+        assert (td / "test_dl.txt").read_text() == "CDP Download Integration Test"
+
+        # 9. Test PDF Extraction
+        print("\n9. Testing PDF Extraction...")
+        pdf_res = await client.extract_pdf("https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf")
+        assert "PDF Extracted" in pdf_res
+        assert "Dummy PDF file" in pdf_res
+
         print("\nAll High-Level Built-in Tools PASSED!")
     finally:
         await client.close()
