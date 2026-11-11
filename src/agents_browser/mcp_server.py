@@ -80,22 +80,25 @@ def get_client() -> CDPClient:
 
 
 def screenshots_dir() -> Path:
-    """Persistent screenshot dir under ~/.agents/browser/screenshots."""
-    d = Path.home() / ".agents" / "browser" / "screenshots"
+    """Persistent screenshot dir under <ws>/browser/screenshots."""
+    from .cdp import artifacts_dir
+    d = artifacts_dir("screenshots")
     d.mkdir(parents=True, exist_ok=True)
     return d
 
 
 def downloads_dir() -> Path:
-    """Persistent downloads dir under ~/.agents/browser/downloads."""
-    d = Path.home() / ".agents" / "browser" / "downloads"
+    """Persistent downloads dir under <ws>/browser/downloads."""
+    from .cdp import artifacts_dir
+    d = artifacts_dir("downloads")
     d.mkdir(parents=True, exist_ok=True)
     return d
 
 
 def recordings_dir() -> Path:
-    """Persistent recordings dir under ~/.agents/browser/recordings."""
-    d = Path.home() / ".agents" / "browser" / "recordings"
+    """Persistent recordings dir under <ws>/browser/recordings."""
+    from .cdp import artifacts_dir
+    d = artifacts_dir("recordings")
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -479,7 +482,7 @@ async def browser_record(duration_sec: float = 5.0, fps: int = 15, path: str = "
     """Record screen activity on the active tab for a given duration and export to MP4 video (or GIF).
 
     Captures high-fidelity CDP screencast frames and encodes them using local ffmpeg into a video file
-    under ~/.agents/browser/recordings/ (or custom path).
+    under <ws>/browser/recordings/ (or custom path).
 
     Parameters:
     - duration_sec: Recording duration in seconds (default 5.0).

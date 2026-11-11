@@ -214,3 +214,23 @@ def test_client_init_fields():
     assert hasattr(c, "network_logs")
     assert hasattr(c, "recordings_dir")
     assert c.recordings_dir.name == "recordings"
+
+def test_workspace_scoped_artifacts(monkeypatch, tmp_path):
+    host = tmp_path / "host"
+    (host / "workspaces" / "alpha").mkdir(parents=True)
+    (host / "workspaces" / "alpha" / "workspace.json").write_text('{"id": "alpha"}')
+    (host / "workspaces" / "beta").mkdir(parents=True)
+    (host / "workspaces" / "beta" / "workspace.json").write_text('{"id": "beta"}')
+    monkeypatch.setenv("AGENTS_HOST_DIR", str(host))
+    from agents_browser.cdp import artifacts_dir, CDPClient
+    monkeypatch.setenv("AGENTS_WORKSPACE", "alpha")
+    a = artifacts_dir("screenshots")
+    assert a == host / "workspaces" / "alpha" / "browser" / "screenshots"
+    monkeypatch.setenv("AGENTS_WORKSPACE", "beta")
+    b = artifacts_dir("screenshots")
+    assert b == host / "workspaces" / "beta" / "browser" / "screenshots"
+    # profile lives on the host, shared across workspaces
+    monkeypatch.setenv("AGENTS_BROWSER_PROFILE", "sess one")
+    c = CDPClient()
+    assert c.user_data_dir == host / "browser" / "sessions" / "sess_one"
+

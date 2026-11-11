@@ -8,6 +8,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
+
+from agents_workspace import Workspace
 import shutil
 import sys
 from pathlib import Path
@@ -31,10 +33,8 @@ ALWAYS_ON_BODY = """# Browser Control (`agents-browser`)
 
 
 def _agents_home() -> Path:
-    env = os.environ.get("AGENTS_HOME")
-    if env:
-        return Path(env).expanduser()
-    return Path.home() / ".agents"
+    from agents_workspace import Workspace
+    return Workspace.from_env().root
 
 
 def mcp_entry() -> Dict[str, Any]:
@@ -187,7 +187,7 @@ def known_host_mcp_paths() -> List[Path]:
     home = Path.home()
     paths: List[Path] = [
         home / ".cursor" / "mcp.json",
-        _agents_home() / "mcp.json",
+        Workspace.from_env().host.mcp_json,
         home / ".claude.json",
         home / ".claude" / "mcp.json",
         home / ".claude" / "settings.json",
