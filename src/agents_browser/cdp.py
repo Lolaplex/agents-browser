@@ -113,9 +113,20 @@ class CDPClient:
         headless: Optional[bool] = None,
         session: Optional[str] = None,
     ):
-        self.session = (session or os.environ.get("AGENTS_BROWSER_SESSION", "")).strip()
+        env_profile = os.environ.get("AGENTS_BROWSER_PROFILE", "").strip()
+        if not env_profile:
+            legacy = os.environ.get("AGENTS_BROWSER_SESSION", "").strip()
+            if legacy:
+                import warnings
+                warnings.warn(
+                    "AGENTS_BROWSER_SESSION is deprecated; use AGENTS_BROWSER_PROFILE",
+                    DeprecationWarning, stacklevel=3,
+                )
+                env_profile = legacy
+        self.session = session or env_profile
         self.host = host
-        base_dir = Path.home() / ".agents" / "browser"
+        from agents_workspace import Workspace
+        base_dir = Workspace.from_env().host.dir / "browser"
         if user_data_dir:
             self.user_data_dir = Path(user_data_dir)
         elif self.session and self.session != "default":
@@ -2364,3 +2375,11 @@ class CDPClient:
         if self.proc:
             self.proc.terminate()
             self.proc = None
+
+
+def artifacts_dir(kind: str) -> Path:
+    """Workspace-scoped browser artifact dir: <ws>/browser/<kind>."""
+    from agents_workspace import Workspace
+    d = Workspace.from_env().dir / "browser" / kind
+    d.mkdir(parents=True, exist_ok=True)
+    return d

@@ -414,7 +414,7 @@ def help_json() -> dict[str, Any]:
         "env": [
             "AGENTS_BROWSER_BIN",
             "AGENTS_BROWSER_HEADLESS",
-            "AGENTS_BROWSER_SESSION",
+            "AGENTS_BROWSER_PROFILE",
             "AGENTS_BROWSER_PORT",
             "CHROME_PATH",
             "BROWSER_PATH",

@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Workspace resolver: browser profile lives on the host (`<host>/browser`, env `AGENTS_BROWSER_PROFILE`; `AGENTS_BROWSER_SESSION` kept as a deprecated one-release alias). Artifacts (screenshots, downloads, recordings) are workspace-scoped under `<ws>/browser/`. Sync writes rules/skills/AGENTS.md into the workspace root and `mcp.json` on the host. Update-check cache under `<host>/cache/updates/`.
 - **Standalone CLI with full MCP parity.** Every `browser_*` tool now has a shell verb: `open`, `snapshot` (`-i` interactive-only, `-d` diff), `click`, `type`, `fill`, `select`, `scroll`, `back`, `reload`, `wait`, `find`, `tabs`, `switch-tab`, `read`, `scrape`, `screenshot`, `audit`, `inspect`, `headless`, `close`, and `skills`. The background browser keeps the active tab and the `@ref` indices across separate invocations.
 - `--help-json` declares `side_effects` for every CLI verb, so the harness classifies a read as read-only and an action as mutating.
 - `click` checks visibility, disabled state, and `elementFromPoint` hit-testing before it acts, so a covering modal is reported instead of silently swallowed.

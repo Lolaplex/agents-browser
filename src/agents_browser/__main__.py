@@ -23,7 +23,8 @@ from . import __version__
 
 
 def _resolve_screenshot_path(path: str = "") -> Path:
-    d = Path.home() / ".agents" / "browser" / "screenshots"
+    from .cdp import artifacts_dir
+    d = artifacts_dir("screenshots")
     d.mkdir(parents=True, exist_ok=True)
     if path.strip():
         out = Path(path).expanduser()
