@@ -1233,9 +1233,24 @@ class CDPClient:
     async def search(self, query: str, engine: str = "duckduckgo") -> str:
         """Execute a search and return clean structured results (Title, URL, Snippet)."""
         encoded = urllib.parse.quote_plus(query)
+        if not self._is_ws_open() and engine.lower() == "duckduckgo":
+            # No browser session: stdlib fallback still answers the question.
+            from .webtext import ddg_search
+
+            try:
+                return await asyncio.to_thread(ddg_search, query)
+            except Exception:
+                pass  # fall through to the CDP path, which will report the real error
         if engine.lower() == "duckduckgo":
             url = f"https://html.duckduckgo.com/html/?q={encoded}"
-            await self.open(url)
+            try:
+                await self.open(url)
+            except Exception:
+                # Browser launch failed (e.g. no Chromium on the host):
+                # answer via the stdlib path instead of erroring out.
+                from .webtext import ddg_search
+
+                return await asyncio.to_thread(ddg_search, query)
             await asyncio.sleep(1.0)
 
             js_extract = """

@@ -170,6 +170,12 @@ def main(argv: list[str] | None = None) -> None:
     # read
     subparsers.add_parser("read", help="Read article in clean Reader Mode markdown")
 
+    # read-url (browserless)
+    ru_parser = subparsers.add_parser(
+        "read-url", help="Fetch URL and extract readable text (no browser needed)")
+    ru_parser.add_argument("url", help="Target URL")
+    ru_parser.add_argument("--max-chars", type=int, default=12000)
+
     # scrape
     scrape_parser = subparsers.add_parser("scrape", help="Extract structured content (text, table, links, html) from CSS selector")
     scrape_parser.add_argument("selector", nargs="?", default="body", help="CSS selector (default 'body')")
@@ -357,6 +363,13 @@ def main(argv: list[str] | None = None) -> None:
                 print(await c.search(args.query, engine=args.engine))
             elif cmd == "read":
                 print(await c.read_article())
+            elif cmd == "read-url":
+                from .webtext import fetch_text
+
+                try:
+                    print(fetch_text(args.url, max_chars=args.max_chars))
+                except Exception as exc:
+                    print(f"Error reading {args.url}: {exc}")
             elif cmd == "scrape":
                 print(await c.scrape(selector=args.selector, mode=args.mode))
             elif cmd == "screenshot":

@@ -537,7 +537,33 @@ async def browser_search(query: str, engine: str = "duckduckgo") -> str:
         client = get_client()
         return await client.search(query=query, engine=engine)
     except Exception as e:
-        return f"Error searching: {e}"
+        # Last-resort stdlib path: no Chromium needed at all.
+        try:
+            import asyncio
+
+            from .webtext import ddg_search
+
+            return await asyncio.to_thread(ddg_search, query)
+        except Exception:
+            return f"Error searching: {e}"
+
+
+@mcp.tool()
+async def browser_read_url(url: str, max_chars: int = 12000) -> str:
+    """Fetch a URL and return readable article text + links.
+
+    Works without a browser session (stdlib HTTP) — the reliable path on
+    hosts without Chromium. Prefer this over browser_fetch for reading
+    prose pages; browser_fetch returns raw HTML.
+    """
+    try:
+        import asyncio
+
+        from .webtext import fetch_text
+
+        return await asyncio.to_thread(fetch_text, url, max_chars)
+    except Exception as e:
+        return f"Error reading {url}: {e}"
 
 
 @mcp.tool()
