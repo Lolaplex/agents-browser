@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- Sync tests point at the workspace root (`<host>/workspaces/default`) now that `AGENTS_HOME` is removed; canonical rules/AGENTS.md land under the selected workspace.
+
+### Changed
 - `.mailmap` maps legacy `Klix`/`Felix Kempf` author names to `Klix927` (no history rewrite; display only).
 
 ### Added

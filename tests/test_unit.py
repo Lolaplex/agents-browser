@@ -146,16 +146,16 @@ def test_sync_host_rules_and_always_on(monkeypatch):
 
     with tempfile.TemporaryDirectory() as tmpdir:
         fake_home = Path(tmpdir)
-        monkeypatch.setenv("AGENTS_HOME", str(fake_home / ".agents"))
+        monkeypatch.setenv("AGENTS_HOST_DIR", str(fake_home / ".agents"))
         monkeypatch.setattr(Path, "home", lambda: fake_home)
         rules = sync_mod.sync_host_rules()
         assert any("agents-browser.mdc" in r for r in rules)
-        mdc = fake_home / ".agents" / "rules" / "agents-browser.mdc"
+        mdc = fake_home / ".agents" / "workspaces" / "default" / "rules" / "agents-browser.mdc"
         assert mdc.is_file()
         assert "alwaysApply: true" in mdc.read_text(encoding="utf-8")
 
         files = sync_mod.sync_always_on_files()
-        agents_md = fake_home / ".agents" / "AGENTS.md"
+        agents_md = fake_home / ".agents" / "workspaces" / "default" / "AGENTS.md"
         assert agents_md.is_file()
         assert sync_mod.MARKER in agents_md.read_text(encoding="utf-8")
         assert len(files) >= 4
