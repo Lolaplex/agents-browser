@@ -165,10 +165,11 @@ def main(argv: list[str] | None = None) -> None:
     # search
     search_parser = subparsers.add_parser("search", help="Perform a web search and print structured results")
     search_parser.add_argument("query", help="Search query string")
-    search_parser.add_argument("--engine", default="duckduckgo", help="Search engine (default duckduckgo)")
+    search_parser.add_argument("--engine", default="auto", help="Search engine: auto (default, ddg->bing->searxng chain), duckduckgo, bing, searxng (needs AGENTS_SEARXNG_URL)")
 
     # read
-    subparsers.add_parser("read", help="Read article in clean Reader Mode markdown")
+    read_parser = subparsers.add_parser("read", help="Read article in clean Reader Mode markdown")
+    read_parser.add_argument("url", nargs="?", default="", help="Optional URL to open first (stdlib text fetch when no Chromium)")
 
     # read-url (browserless)
     ru_parser = subparsers.add_parser(
@@ -180,6 +181,7 @@ def main(argv: list[str] | None = None) -> None:
     scrape_parser = subparsers.add_parser("scrape", help="Extract structured content (text, table, links, html) from CSS selector")
     scrape_parser.add_argument("selector", nargs="?", default="body", help="CSS selector (default 'body')")
     scrape_parser.add_argument("--mode", default="text", choices=["text", "table", "links", "html"], help="Extraction mode")
+    scrape_parser.add_argument("--url", default="", help="Optional URL to open first (text/links fall back to stdlib fetch without Chromium)")
 
     # screenshot
     shot_parser = subparsers.add_parser("screenshot", help="Capture PNG screenshot")
@@ -362,7 +364,7 @@ def main(argv: list[str] | None = None) -> None:
             elif cmd == "search":
                 print(await c.search(args.query, engine=args.engine))
             elif cmd == "read":
-                print(await c.read_article())
+                print(await c.read_article(url=args.url))
             elif cmd == "read-url":
                 from .webtext import fetch_text
 
@@ -371,7 +373,7 @@ def main(argv: list[str] | None = None) -> None:
                 except Exception as exc:
                     print(f"Error reading {args.url}: {exc}")
             elif cmd == "scrape":
-                print(await c.scrape(selector=args.selector, mode=args.mode))
+                print(await c.scrape(selector=args.selector, mode=args.mode, url=args.url))
             elif cmd == "screenshot":
                 out_arg = args.out or args.path
                 b64 = await c.screenshot(full_page=args.full_page)

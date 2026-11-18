@@ -241,18 +241,37 @@ def help_json() -> dict[str, Any]:
                     "type": "object",
                     "properties": {
                         "query": {"type": "string", "description": "Search query"},
-                        "engine": {"type": "string", "description": "Search engine (default duckduckgo)"},
+                        "engine": {"type": "string", "description": "Engine: auto (default, ddg->bing->searxng chain), duckduckgo, bing, searxng (needs AGENTS_SEARXNG_URL)"},
                     },
                     "required": ["query"],
                 },
             },
             "read": {
-                "usage": "agents-browser read",
-                "description": "Reader-mode markdown of the current page article",
+                "usage": "agents-browser read [URL]",
+                "description": "Reader-mode markdown of the current page article (or URL; stdlib text fetch without Chromium)",
                 "side_effects": "read-only",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "url": {"type": "string", "description": "Optional URL to open first"},
+                    },
+                },
+            },
+            "read-url": {
+                "usage": "agents-browser read-url URL [--max-chars N]",
+                "description": "Fetch URL and extract readable text + links (no browser needed)",
+                "side_effects": "read-only",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "url": {"type": "string", "description": "Target URL"},
+                        "max_chars": {"type": "integer", "description": "Max characters (default 12000)"},
+                    },
+                    "required": ["url"],
+                },
             },
             "scrape": {
-                "usage": "agents-browser scrape [SELECTOR] [--mode MODE]",
+                "usage": "agents-browser scrape [SELECTOR] [--mode MODE] [--url URL]",
                 "description": "Extract structured content ('text', 'table', 'links', 'html') from CSS selector",
                 "side_effects": "read-only",
                 "parameters": {
@@ -260,6 +279,7 @@ def help_json() -> dict[str, Any]:
                     "properties": {
                         "selector": {"type": "string", "description": "CSS selector (default 'body')"},
                         "mode": {"type": "string", "description": "'text', 'table', 'links', or 'html'"},
+                        "url": {"type": "string", "description": "Optional URL to open first (text/links fall back to stdlib fetch without Chromium)"},
                     },
                 },
             },

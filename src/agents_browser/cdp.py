@@ -1230,64 +1230,83 @@ class CDPClient:
 
     # --- High-Level Built-in Actions ---
 
-    async def search(self, query: str, engine: str = "duckduckgo") -> str:
-        """Execute a search and return clean structured results (Title, URL, Snippet)."""
-        encoded = urllib.parse.quote_plus(query)
-        if not self._is_ws_open() and engine.lower() == "duckduckgo":
-            # No browser session: stdlib fallback still answers the question.
-            from .webtext import ddg_search
+    async def search(self, query: str, engine: str = "auto") -> str:
+        """Execute a search and return clean structured results (Title, URL, Snippet).
+
+        Engines: ``duckduckgo``/``ddg``, ``bing``, ``searxng`` (needs
+        ``AGENTS_SEARXNG_URL``), or ``auto`` (stdlib engine chain:
+        ddg -> bing -> searxng). Without a browser session the stdlib
+        chain answers; with a session, ddg/auto also scrape the DDG
+        html page for richer snippets.
+        """
+        engine = (engine or "auto").lower()
+        if engine not in ("duckduckgo", "ddg", "auto") or not self._is_ws_open():
+            # Non-DDG engines and the no-session path share the stdlib engines.
+            from .webtext import web_search
 
             try:
-                return await asyncio.to_thread(ddg_search, query)
+                return await asyncio.to_thread(web_search, query, engine)
             except Exception:
-                pass  # fall through to the CDP path, which will report the real error
-        if engine.lower() == "duckduckgo":
-            url = f"https://html.duckduckgo.com/html/?q={encoded}"
+                if engine not in ("duckduckgo", "ddg", "auto"):
+                    raise
+                # fall through to the CDP path, which will report the real error
+        encoded = urllib.parse.quote_plus(query)
+        url = f"https://html.duckduckgo.com/html/?q={encoded}"
+        try:
+            await self.open(url)
+        except Exception:
+            # Browser launch failed (e.g. no Chromium on the host):
+            # answer via the stdlib path instead of erroring out.
+            from .webtext import web_search
+
+            return await asyncio.to_thread(web_search, query, "auto")
+        await asyncio.sleep(1.0)
+
+        js_extract = """
+        (() => {
+            const results = [];
+            const items = document.querySelectorAll('.result');
+            items.forEach(item => {
+                const titleEl = item.querySelector('.result__title a');
+                const snippetEl = item.querySelector('.result__snippet');
+                if (titleEl) {
+                    results.push({
+                        title: titleEl.innerText.trim(),
+                        url: titleEl.getAttribute('href') || '',
+                        snippet: snippetEl ? snippetEl.innerText.trim() : ''
+                    });
+                }
+            });
+            return results.slice(0, 10);
+        })()
+        """
+        data = await self.evaluate(js_extract)
+        if isinstance(data, list) and data:
+            lines = [f"### Search Results for '{query}':\n"]
+            for i, r in enumerate(data, 1):
+                lines.append(f"{i}. **[{r.get('title')}]({r.get('url')})**")
+                if r.get("snippet"):
+                    lines.append(f"   {r.get('snippet')}")
+            return "\n".join(lines)
+
+        # Page scrape came back empty: stdlib chain is the last resort.
+        from .webtext import web_search
+
+        return await asyncio.to_thread(web_search, query, "auto")
+
+    async def read_article(self, url: str = "") -> str:
+        """Extract clean Reader-Mode article markdown, removing navbars, sidebars, and ads.
+
+        With ``url``: navigates there first; when no Chromium is available
+        the stdlib ``fetch_text`` path answers instead (readable text, no JS).
+        """
+        if url:
             try:
                 await self.open(url)
             except Exception:
-                # Browser launch failed (e.g. no Chromium on the host):
-                # answer via the stdlib path instead of erroring out.
-                from .webtext import ddg_search
+                from .webtext import fetch_text
 
-                return await asyncio.to_thread(ddg_search, query)
-            await asyncio.sleep(1.0)
-
-            js_extract = """
-            (() => {
-                const results = [];
-                const items = document.querySelectorAll('.result');
-                items.forEach(item => {
-                    const titleEl = item.querySelector('.result__title a');
-                    const snippetEl = item.querySelector('.result__snippet');
-                    if (titleEl) {
-                        results.push({
-                            title: titleEl.innerText.trim(),
-                            url: titleEl.getAttribute('href') || '',
-                            snippet: snippetEl ? snippetEl.innerText.trim() : ''
-                        });
-                    }
-                });
-                return results.slice(0, 10);
-            })()
-            """
-            data = await self.evaluate(js_extract)
-            if isinstance(data, list) and data:
-                lines = [f"### Search Results for '{query}':\n"]
-                for i, r in enumerate(data, 1):
-                    lines.append(f"{i}. **[{r.get('title')}]({r.get('url')})**")
-                    if r.get("snippet"):
-                        lines.append(f"   {r.get('snippet')}")
-                return "\n".join(lines)
-
-        # Fallback to standard open
-        fallback_url = f"https://duckduckgo.com/?q={encoded}"
-        await self.open(fallback_url)
-        await asyncio.sleep(2.0)
-        return await self.snapshot()
-
-    async def read_article(self) -> str:
-        """Extract clean Reader-Mode article markdown, removing navbars, sidebars, and ads."""
+                return await asyncio.to_thread(fetch_text, url)
         js_code = """
         (() => {
             const clone = document.body.cloneNode(true);
@@ -1333,8 +1352,24 @@ class CDPClient:
             return f"# {data.get('title', 'Article')}\n**URL**: {data.get('url')}\n\n{data.get('content', '')}"
         return str(data)
 
-    async def scrape(self, selector: str = "body", mode: str = "text") -> str:
-        """Scrape structured data from CSS selector (mode: 'text', 'table', 'links', 'html')."""
+    async def scrape(self, selector: str = "body", mode: str = "text", url: str = "") -> str:
+        """Scrape structured data from CSS selector (mode: 'text', 'table', 'links', 'html').
+
+        With ``url``: navigates there first. Without Chromium, modes
+        ``text``/``links`` fall back to the stdlib ``fetch_text`` path.
+        """
+        if url:
+            try:
+                await self.open(url)
+            except Exception:
+                if mode.lower() in ("text", "links"):
+                    from .webtext import fetch_text
+
+                    return await asyncio.to_thread(fetch_text, url)
+                return (
+                    f"Error: mode '{mode}' needs a browser session and no "
+                    "Chromium was found. Use mode 'text' or the read-url command."
+                )
         js_code = f"""
         (() => {{
             const sel = {json.dumps(selector)};

@@ -531,8 +531,13 @@ async def browser_record_stop(path: str = "") -> str:
 
 
 @mcp.tool()
-async def browser_search(query: str, engine: str = "duckduckgo") -> str:
-    """Perform a web search and return structured top-10 organic results (Title, URL, Snippet) in one call."""
+async def browser_search(query: str, engine: str = "auto") -> str:
+    """Perform a web search and return structured top-10 organic results (Title, URL, Snippet) in one call.
+
+    Engines: 'auto' (default; tries duckduckgo, then bing, then searxng when
+    AGENTS_SEARXNG_URL is set), 'duckduckgo', 'bing', 'searxng'. Works without
+    a browser session via the stdlib engine chain.
+    """
     try:
         client = get_client()
         return await client.search(query=query, engine=engine)
@@ -541,9 +546,9 @@ async def browser_search(query: str, engine: str = "duckduckgo") -> str:
         try:
             import asyncio
 
-            from .webtext import ddg_search
+            from .webtext import web_search
 
-            return await asyncio.to_thread(ddg_search, query)
+            return await asyncio.to_thread(web_search, query, engine)
         except Exception:
             return f"Error searching: {e}"
 
@@ -567,17 +572,21 @@ async def browser_read_url(url: str, max_chars: int = 12000) -> str:
 
 
 @mcp.tool()
-async def browser_read_article() -> str:
-    """Extract clean Reader-Mode markdown of the primary article/content on the page, stripping navbars, footers, and ads."""
+async def browser_read_article(url: str = "") -> str:
+    """Extract clean Reader-Mode markdown of the primary article/content on the page, stripping navbars, footers, and ads.
+
+    With 'url': navigates there first; falls back to stdlib text fetch when
+    no Chromium is available (no JS rendering in that path).
+    """
     try:
         client = get_client()
-        return await client.read_article()
+        return await client.read_article(url=url)
     except Exception as e:
         return f"Error reading article: {e}"
 
 
 @mcp.tool()
-async def browser_scrape(selector: str = "body", mode: str = "text") -> str:
+async def browser_scrape(selector: str = "body", mode: str = "text", url: str = "") -> str:
     """Extract structured data from elements matching a CSS selector.
 
     Modes:
@@ -585,10 +594,13 @@ async def browser_scrape(selector: str = "body", mode: str = "text") -> str:
     - 'table': Formats HTML <table> into Markdown table.
     - 'links': Extracts all [title](url) links.
     - 'html': Returns outer HTML markup.
+
+    With 'url': navigates there first; without Chromium, 'text'/'links'
+    fall back to the stdlib readable-text fetch.
     """
     try:
         client = get_client()
-        return await client.scrape(selector=selector, mode=mode)
+        return await client.scrape(selector=selector, mode=mode, url=url)
     except Exception as e:
         return f"Error scraping selector '{selector}': {e}"
 

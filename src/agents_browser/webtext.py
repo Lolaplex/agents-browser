@@ -9,6 +9,8 @@ script/style/nav noise and returns readable article text.
 from __future__ import annotations
 
 import html
+import json
+import os
 import re
 import urllib.parse
 import urllib.request
@@ -173,22 +175,162 @@ class _DDGParser(HTMLParser):
             self._buf.append(data)
 
 
+def _unwrap_url(url: str) -> str:
+    """Resolve engine-wrapped outbound links to their real target."""
+    # DDG wraps links in //duckduckgo.com/l/?uddg=<urlencoded>
+    if "uddg=" in url:
+        return urllib.parse.unquote(url.split("uddg=", 1)[1].split("&", 1)[0])
+    # Bing wraps links in /ck/a?...&u=a1<base64url>
+    m = re.search(r"[?&]u=a1([^&]+)", url)
+    if m:
+        try:
+            import base64
+
+            return base64.urlsafe_b64decode(m.group(1) + "===").decode("utf-8", errors="replace")
+        except Exception:
+            return url
+    return url
+
+
+def _format_results(query: str, results: list[dict], max_results: int = 10) -> str:
+    """Render [{title, url, snippet}] rows as markdown; shared by all engines."""
+    results = results[:max_results]
+    if not results:
+        return f"No results for '{query}'."
+    lines = [f"### Search Results for '{query}':\n"]
+    for i, r in enumerate(results, 1):
+        url = _unwrap_url(r.get("url", ""))
+        lines.append(f"{i}. **[{r.get('title')}]({url})**")
+        if r.get("snippet"):
+            lines.append(f"   {r['snippet']}")
+    return "\n".join(lines)
+
+
 def ddg_search(query: str, max_results: int = 10, timeout: float = 20.0) -> str:
     """DuckDuckGo html-endpoint search without a browser."""
     encoded = urllib.parse.quote_plus(query)
     raw = _request(f"https://html.duckduckgo.com/html/?q={encoded}", timeout)
     parser = _DDGParser()
     parser.feed(raw.decode("utf-8", errors="replace"))
-    results = parser.results[:max_results]
-    if not results:
-        return f"No results for '{query}'."
-    lines = [f"### Search Results for '{query}':\n"]
-    for i, r in enumerate(results, 1):
-        url = r.get("url", "")
-        # DDG wraps outbound links in //duckduckgo.com/l/?uddg=
-        if "uddg=" in url:
-            url = urllib.parse.unquote(url.split("uddg=", 1)[1].split("&", 1)[0])
-        lines.append(f"{i}. **[{r.get('title')}]({url})**")
-        if r.get("snippet"):
-            lines.append(f"   {r['snippet']}")
-    return "\n".join(lines)
+    return _format_results(query, parser.results, max_results)
+
+
+class _BingParser(HTMLParser):
+    """Parse bing.com/search result rows (<li class='b_algo'>)."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.results: list[dict] = []
+        self._in_algo = False
+        self._in_h2 = False
+        self._in_title_a = False
+        self._in_snippet = False
+        self._cur: dict = {}
+        self._buf: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        cls = " ".join(dict(attrs).get("class", "").split())
+        if tag == "li" and "b_algo" in cls:
+            self._in_algo = True
+            self._cur = {"url": "", "title": "", "snippet": ""}
+        elif self._in_algo:
+            if tag == "h2":
+                self._in_h2 = True
+            elif tag == "a" and self._in_h2 and not self._cur.get("url"):
+                self._cur["url"] = dict(attrs).get("href") or ""
+                self._in_title_a = True
+                self._buf = []
+            elif tag == "p" and not self._cur.get("snippet"):
+                self._in_snippet = True
+                self._buf = []
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "a" and self._in_title_a:
+            self._cur["title"] = " ".join("".join(self._buf).split())
+            self._in_title_a = False
+        elif tag == "h2" and self._in_h2:
+            self._in_h2 = False
+        elif tag == "p" and self._in_snippet:
+            self._cur["snippet"] = " ".join("".join(self._buf).split())
+            self._in_snippet = False
+        elif tag == "li" and self._in_algo:
+            if self._cur.get("title") and self._cur.get("url"):
+                self.results.append(self._cur)
+            self._in_algo = False
+            self._in_h2 = False
+
+    def handle_data(self, data: str) -> None:
+        if self._in_title_a or self._in_snippet:
+            self._buf.append(data)
+
+
+def bing_search(query: str, max_results: int = 10, timeout: float = 20.0) -> str:
+    """Bing HTML search without a browser."""
+    encoded = urllib.parse.quote_plus(query)
+    raw = _request(f"https://www.bing.com/search?q={encoded}&count={max_results}", timeout)
+    parser = _BingParser()
+    parser.feed(raw.decode("utf-8", errors="replace"))
+    return _format_results(query, parser.results, max_results)
+
+
+def searxng_search(
+    query: str,
+    max_results: int = 10,
+    timeout: float = 20.0,
+    base_url: str = "",
+) -> str:
+    """SearXNG JSON API search. Self-hosted metasearch: aggregates many engines,
+    no per-engine rate limit. Needs an instance URL (env AGENTS_SEARXNG_URL)."""
+    base = (base_url or os.environ.get("AGENTS_SEARXNG_URL", "")).rstrip("/")
+    if not base:
+        return "SearXNG needs an instance URL: set AGENTS_SEARXNG_URL."
+    encoded = urllib.parse.quote_plus(query)
+    req = urllib.request.Request(
+        f"{base}/search?q={encoded}&format=json", headers={"User-Agent": _UA}
+    )
+    data = json.loads(urllib.request.urlopen(req, timeout=timeout).read())
+    results = [
+        {
+            "title": r.get("title", ""),
+            "url": r.get("url", ""),
+            "snippet": r.get("content", ""),
+        }
+        for r in data.get("results", [])
+    ]
+    return _format_results(query, results, max_results)
+
+
+def web_search(
+    query: str,
+    engine: str = "auto",
+    max_results: int = 10,
+    timeout: float = 20.0,
+    searxng_url: str = "",
+) -> str:
+    """Multi-engine browserless search.
+
+    ``auto`` tries duckduckgo, then bing, then searxng (when
+    AGENTS_SEARXNG_URL is set) and returns the first non-empty answer.
+    """
+    engine = (engine or "auto").lower()
+    if engine in ("duckduckgo", "ddg"):
+        return ddg_search(query, max_results, timeout)
+    if engine == "bing":
+        return bing_search(query, max_results, timeout)
+    if engine == "searxng":
+        return searxng_search(query, max_results, timeout, searxng_url)
+    if engine == "auto":
+        for fn in (ddg_search, bing_search):
+            try:
+                out = fn(query, max_results, timeout)
+                if not out.startswith("No results"):
+                    return out
+            except Exception:
+                continue
+        if searxng_url or os.environ.get("AGENTS_SEARXNG_URL"):
+            try:
+                return searxng_search(query, max_results, timeout, searxng_url)
+            except Exception:
+                pass
+        return f"Error searching '{query}': all engines failed."
+    return f"Unknown engine '{engine}' (duckduckgo|bing|searxng|auto)."
