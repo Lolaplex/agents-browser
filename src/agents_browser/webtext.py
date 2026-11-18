@@ -309,8 +309,9 @@ def web_search(
 ) -> str:
     """Multi-engine browserless search.
 
-    ``auto`` tries duckduckgo, then bing, then searxng (when
-    AGENTS_SEARXNG_URL is set) and returns the first non-empty answer.
+    ``auto`` tries searxng first when AGENTS_SEARXNG_URL is set (self-hosted
+    instances have no rate limits and aggregate every other engine), then
+    duckduckgo, then bing. Returns the first non-empty answer.
     """
     engine = (engine or "auto").lower()
     if engine in ("duckduckgo", "ddg"):
@@ -320,17 +321,18 @@ def web_search(
     if engine == "searxng":
         return searxng_search(query, max_results, timeout, searxng_url)
     if engine == "auto":
-        for fn in (ddg_search, bing_search):
+        chain = []
+        if searxng_url or os.environ.get("AGENTS_SEARXNG_URL"):
+            chain.append(
+                lambda q, n, t: searxng_search(q, n, t, searxng_url)
+            )
+        chain += [ddg_search, bing_search]
+        for fn in chain:
             try:
                 out = fn(query, max_results, timeout)
                 if not out.startswith("No results"):
                     return out
             except Exception:
                 continue
-        if searxng_url or os.environ.get("AGENTS_SEARXNG_URL"):
-            try:
-                return searxng_search(query, max_results, timeout, searxng_url)
-            except Exception:
-                pass
         return f"Error searching '{query}': all engines failed."
     return f"Unknown engine '{engine}' (duckduckgo|bing|searxng|auto)."
