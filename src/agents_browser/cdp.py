@@ -541,14 +541,15 @@ class CDPClient:
         """Turn lite media-blocking off and reload so images/fonts arrive.
 
         Visual tools need real pixels; a page loaded under blocking never
-        fetched them.
+        fetched them. Connects first when needed (one-shot CLI calls reopen
+        the session per invocation).
         """
         if not self._lite:
             return
         self._lite = False
-        if not self._is_ws_open():
-            return
         try:
+            if not self._is_ws_open():
+                await self.connect()
             await self._apply_blocked_urls()
             await self.call("Page.reload")
             await self.wait_stable(timeout_ms=6000, quiet_ms=500)
