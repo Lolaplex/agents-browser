@@ -638,6 +638,8 @@ class CDPClient:
             await self.connect()
 
         self._last_download_info = None
+        self.console_logs.clear()
+        self.network_logs.clear()
         await self.call("Page.navigate", {"url": url})
         await asyncio.sleep(1.0)
 
@@ -1224,6 +1226,8 @@ class CDPClient:
 
     async def reload(self, ignore_cache: bool = False) -> str:
         """Reload current page."""
+        self.console_logs.clear()
+        self.network_logs.clear()
         await self.call("Page.reload", {"ignoreCache": ignore_cache})
         await asyncio.sleep(1.0)
         return "Page reloaded"
@@ -1341,6 +1345,8 @@ class CDPClient:
         """Switch active CDP focus to another tab ID."""
         await self.connect(target_id)
         await self.call("Target.activateTarget", {"targetId": target_id})
+        self.console_logs.clear()
+        self.network_logs.clear()
         self._save_session_state(target_id=target_id)
         return f"Switched to tab: {target_id}"
 
@@ -2509,14 +2515,16 @@ class CDPClient:
                 pass
 
             if out_path.exists() and out_path.stat().st_size > 0:
-                return f"Screen recording saved: {out_path} ({len(frames)} frames, {out_path.stat().st_size} bytes)"
+                note = " (mostly static page: few unique frames)" if len(frames) < 5 else ""
+                return f"Screen recording saved: {out_path} ({len(frames)} frames, {out_path.stat().st_size} bytes){note}"
 
         # Fallback if ffmpeg is missing or failed: save frames to a folder
         frames_dir = self.recordings_dir / f"frames-{stamp}"
         frames_dir.mkdir(parents=True, exist_ok=True)
         for i, f in enumerate(frames):
             (frames_dir / f"frame_{i:04d}.jpg").write_bytes(base64.b64decode(f))
-        return f"Screen recording frames saved ({len(frames)} frames) to: {frames_dir} (Install ffmpeg to enable direct MP4 export)"
+        note = " (mostly static page: few unique frames)" if len(frames) < 5 else ""
+        return f"Screen recording frames saved ({len(frames)} frames) to: {frames_dir}{note} (Install ffmpeg to enable direct MP4 export)"
 
     async def record(self, duration_sec: float = 5.0, fps: int = 15, path: str = "") -> str:
         """One-shot helper: record screen for `duration_sec` seconds and export to MP4."""

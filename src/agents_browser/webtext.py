@@ -109,8 +109,19 @@ def fetch_text(url: str, max_chars: int = 12000, timeout: float = 20.0) -> str:
     if not url.startswith(("http://", "https://")):
         url = "https://" + url
     raw = _request(url, timeout=timeout)
+    text = raw.decode("utf-8", errors="replace")
+
+    # Raw JSON endpoint: no HTML blocks to extract — pretty-print instead.
+    stripped = text.lstrip()
+    if stripped.startswith(("{", "[")) and "<html" not in text[:2000].lower():
+        try:
+            pretty = json.dumps(json.loads(text), indent=2, ensure_ascii=False)
+            return f"# {url}\n**URL**: {url}\n\n```json\n{pretty[:max_chars]}\n```"
+        except ValueError:
+            pass
+
     parser = _TextExtractor()
-    parser.feed(raw.decode("utf-8", errors="replace"))
+    parser.feed(text)
 
     out: list[str] = []
     size = 0

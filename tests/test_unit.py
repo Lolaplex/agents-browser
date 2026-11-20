@@ -324,6 +324,30 @@ def test_set_lite_toggle():
     assert c2._lite is True
 
 
+def test_fetch_text_json_passthrough(monkeypatch):
+    from agents_browser import webtext
+    monkeypatch.setattr(
+        webtext, "_request", lambda url, timeout=20.0: b'{"a": 1, "b": [2, 3]}'
+    )
+    out = webtext.fetch_text("https://api.test/data")
+    assert "```json" in out and '"a": 1' in out
+
+
+def test_fill_form_accepts_dict_alias(monkeypatch):
+    import asyncio
+    from agents_browser import mcp_server
+
+    class Fake:
+        async def fill_form(self, fields, submit_selector=""):
+            return f"{fields}|{submit_selector}"
+
+    monkeypatch.setattr(mcp_server, "_client", Fake())
+    out = asyncio.run(mcp_server.browser_fill_form(fields={"@1": "x"}))
+    assert "'@1': 'x'" in out
+    out2 = asyncio.run(mcp_server.browser_fill_form(fields_json='{"@2": "y"}'))
+    assert "'@2': 'y'" in out2
+
+
 def test_in_container_detection(monkeypatch):
     import os
     import sys

@@ -658,19 +658,20 @@ async def browser_scrape(selector: str = "body", mode: str = "text", url: str = 
 
 
 @mcp.tool()
-async def browser_fill_form(fields_json: str, submit_selector: str = "") -> str:
+async def browser_fill_form(fields_json: str = "", fields: Optional[dict] = None, submit_selector: str = "") -> str:
     """Batch fill multiple form fields in one call and optionally submit.
 
     Parameters:
-    - fields_json: JSON string mapping target ref/selector to value, e.g. '{"@1": "myuser", "@2": "mypass"}'
+    - fields: Dict mapping target ref/selector to value, e.g. {"@1": "myuser", "@2": "mypass"}
+    - fields_json: Same mapping as a JSON string (either form works)
     - submit_selector: Optional CSS selector or @ref to click after filling (e.g. '@3' or '#submit').
     """
     try:
         client = get_client()
-        fields = json.loads(fields_json)
-        if not isinstance(fields, dict):
-            return "Error: fields_json must be a JSON dictionary of {target: value}"
-        return await client.fill_form(fields, submit_selector=submit_selector)
+        data = fields if isinstance(fields, dict) else json.loads(fields_json or "{}")
+        if not isinstance(data, dict) or not data:
+            return "Error: pass fields={...} (dict) or fields_json='{...}' (JSON string)."
+        return await client.fill_form(data, submit_selector=submit_selector)
     except Exception as e:
         return f"Error batch filling form: {e}"
 
