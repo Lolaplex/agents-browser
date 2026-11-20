@@ -26,6 +26,7 @@ def help_json() -> dict[str, Any]:
     return {
         "name": "agents-browser",
         "version": _version(),
+        "cordis_expose": True,
         "description": "Minimal CDP Browser MCP & CLI for AI coding agents",
         "commands": {
             "serve": {
