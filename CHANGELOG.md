@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `agents-browser install [--full]`: opt-in Chrome for Testing download into `<host>/browser/bin/` (`chrome-headless-shell` ~100MB; `--full` for the visible-capable `chrome` binary). Pure stdlib, no root; discovery prefers env override, then system browsers, then managed binaries. Never bundled — pip install stays 0MB.
+- Lite mode (default on, `AGENTS_BROWSER_LITE=0` off): `Network.setBlockedURLs` skips image/font/media requests on navigations to cut renderer RAM on heavy pages. Auto-disables — unblocking and reloading — when `browser_screenshot`/`browser_audit`/`browser_record` or visible mode runs, since real pixels need media loaded. `browser_lite` MCP tool toggles mid-session.
+- `--disable-dev-shm-usage` launch flag on detected containers (`/.dockerenv`, `/run/.containerenv`, or cgroup match) so Chrome survives small `/dev/shm`.
 - `--help-json` emits `cordis_expose: true` so agents-harness auto-mounts this package's commands as Cordis tools when no checked-in manifest exists (#32/#34).
 - `web_search` + `web_extract` MCP tools: dependency-free stdlib HTTP path for hosts with no Chrome/CDP at all (bare VPS, containers). Search runs `auto` (searxng via `AGENTS_SEARXNG_URL`, then duckduckgo, then bing HTML) or a named engine; extract strips script/nav chrome to readable markdown-ish text + links via the `webtext` module (no JS rendering). `browser_search` and `browser_read_url`/`browser_scrape` fall back to the same path when no Chromium session is available.
 

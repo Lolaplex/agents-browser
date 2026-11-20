@@ -13,6 +13,9 @@
 - Built-in high level actions: `browser_search`, `browser_read_article`, `browser_scrape`, `browser_fill_form`.
 - Persistent sessions: uses `~/.agents/browser` or attaches to running debug browser.
 - Override: `AGENTS_BROWSER_HEADLESS=0` forces visible CDP launches.
+- **No browser on host?** `agents-browser install` downloads chrome-headless-shell (~100MB, Chrome for Testing) into `<host>/browser/bin/` — opt-in, never bundled. `--full` fetches the full `chrome` binary (required for visible mode). Debian servers: `apt install chromium` works too (found via `which`).
+- **Lite mode** (default, `AGENTS_BROWSER_LITE=0` disables): blocks image/font/media requests on navigations to cut RAM. Auto-off when `browser_screenshot`/`browser_audit`/`browser_record`/visible mode runs (reloads for real pixels). Toggle mid-session: `browser_lite`.
+- Containers (small `/dev/shm`): `--disable-dev-shm-usage` is added automatically when detected.
 
 ## Install & Sync
 ```bash

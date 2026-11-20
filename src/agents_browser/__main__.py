@@ -83,6 +83,10 @@ def main(argv: list[str] | None = None) -> None:
     sync_parser = subparsers.add_parser("sync", help="Auto-configure MCP server across host IDEs and sync skills")
     sync_parser.add_argument("--init", action="store_true", help="Perform initial host IDE registration")
 
+    # install (on-demand Chrome for Testing download)
+    inst_parser = subparsers.add_parser("install", help="Download chrome-headless-shell (~100MB) for hosts without a browser")
+    inst_parser.add_argument("--full", action="store_true", help="Download full chrome binary instead (visible window capable)")
+
     # skills (on-demand CLI skill instructions for non-MCP agents)
     skills_parser = subparsers.add_parser("skills", help="Print agent skill instructions for CLI or MCP workflows")
     skills_parser.add_argument("name", nargs="?", default="core", help="Skill name ('core', 'browser-browse', 'browser-scrape', 'list')")
@@ -267,6 +271,15 @@ def main(argv: list[str] | None = None) -> None:
 
         cmd_argv = ["--init"] if (args.command == "init" or getattr(args, "init", False)) else []
         sys.exit(sync_main(cmd_argv))
+
+    if args.command == "install":
+        from .installer import install_browser
+
+        try:
+            print(install_browser(full=args.full))
+        except Exception as exc:
+            print(f"Install failed: {exc}")
+        return
 
     if args.command == "skills":
         from .sync import get_skill_source

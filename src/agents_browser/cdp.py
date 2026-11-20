@@ -23,6 +23,78 @@ from typing import Any, Callable, Dict, List, Optional, Union
 import websockets
 
 
+def browser_home() -> Path:
+    """Host-level browser dir (profile + managed binaries), shared across workspaces."""
+    from agents_workspace import Workspace
+    return Workspace.from_env().host.dir / "browser"
+
+
+def managed_browser_candidates() -> List[str]:
+    """Binaries under ``<browser_home>/bin`` installed via `agents-browser install`.
+
+    Full ``chrome`` first (visible-capable), then ``chrome-headless-shell``.
+    """
+    base = browser_home() / "bin"
+    if not base.is_dir():
+        return []
+    out: List[str] = []
+    for shell in (False, True):
+        for sub in sorted(base.iterdir()):
+            if not sub.is_dir():
+                continue
+            if shell != sub.name.startswith("chrome-headless-shell"):
+                continue
+            exe = sub / ("chrome-headless-shell" if shell else "chrome")
+            for cand in (exe, exe.parent / (exe.name + ".exe")):
+                if cand.is_file():
+                    out.append(str(cand))
+    return out
+
+
+def is_headless_shell(exe_path: str) -> bool:
+    """True for a Chrome-for-Testing ``chrome-headless-shell`` binary (headless-only)."""
+    return "headless-shell" in os.path.basename(exe_path).lower()
+
+
+def _in_container() -> bool:
+    """True inside Docker/K8s-style containers (small /dev/shm risk)."""
+    if not sys.platform.startswith("linux"):
+        return False
+    if os.path.exists("/.dockerenv") or os.path.exists("/run/.containerenv"):
+        return True
+    try:
+        cgroup = Path("/proc/1/cgroup").read_text(errors="replace")
+        return any(k in cgroup for k in ("docker", "kubepods", "containerd", "podman", "lxc"))
+    except Exception:
+        return False
+
+
+# Network-level ad & tracker blocking (always on for managed sessions).
+_AD_BLOCK_URLS = [
+    "*doubleclick.net*",
+    "*googlesyndication.com*",
+    "*googleads.g.doubleclick.net*",
+    "*adservice.google.*",
+    "*youtube.com/pagead/*",
+    "*youtube.com/api/stats/ads*",
+    "*youtube.com/youtubei/v1/player/ad_break*",
+    "*youtube.com/get_midroll_info*",
+    "*adnxs.com*",
+    "*scorecardresearch.com*",
+    "*taboola.com*",
+    "*outbrain.com*",
+    "*criteo.com*",
+]
+
+# Lite mode: skip decoded media (the RAM spike) — DOM text stays.
+# Auto-off when a visual tool (screenshot/audit/record/visible) runs.
+_LITE_BLOCK_URLS = [
+    "*.png", "*.jpg", "*.jpeg", "*.webp", "*.avif", "*.gif",
+    "*.woff", "*.woff2", "*.ttf", "*.otf",
+    "*.mp4", "*.webm", "*.mov", "*.mp3", "*.wav", "*.ogg",
+]
+
+
 def find_browser_executable() -> str:
     """Find installed Chrome, Edge, Brave, Vivaldi, or other Chromium-based browser on Windows, macOS, or Linux."""
     custom = os.environ.get("AGENTS_BROWSER_BIN") or os.environ.get("CHROME_PATH") or os.environ.get("BROWSER_PATH")
@@ -99,7 +171,15 @@ def find_browser_executable() -> str:
         if path and os.path.exists(path):
             return path
 
-    raise RuntimeError("No Chromium-based browser (Chrome, Edge, Brave, Vivaldi) found on system. Set AGENTS_BROWSER_BIN or CHROME_PATH.")
+    for path in managed_browser_candidates():
+        if os.path.exists(path):
+            return path
+
+    raise RuntimeError(
+        "No Chromium-based browser (Chrome, Edge, Brave, Vivaldi) found on system. "
+        "Run 'agents-browser install' (chrome-headless-shell, ~100MB), install a "
+        "browser, or set AGENTS_BROWSER_BIN / CHROME_PATH."
+    )
 
 
 class CDPClient:
@@ -125,8 +205,7 @@ class CDPClient:
                 env_profile = legacy
         self.session = session or env_profile
         self.host = host
-        from agents_workspace import Workspace
-        base_dir = Workspace.from_env().host.dir / "browser"
+        base_dir = browser_home()
         if user_data_dir:
             self.user_data_dir = Path(user_data_dir)
         elif self.session and self.session != "default":
@@ -173,6 +252,7 @@ class CDPClient:
         self._recording_listener: Optional[Callable[[Dict[str, Any]], None]] = None
         self._last_snapshot_items: List[str] = []
         self._light_mode: bool = False
+        self._lite: bool = os.environ.get("AGENTS_BROWSER_LITE", "1").strip().lower() not in ("0", "false", "no")
 
     def _load_session_state(self) -> Dict[str, Any]:
         try:
@@ -254,6 +334,12 @@ class CDPClient:
 
         self.user_data_dir.mkdir(parents=True, exist_ok=True)
         exe = find_browser_executable()
+        shell = is_headless_shell(exe)
+        if shell and not self.headless:
+            raise RuntimeError(
+                "chrome-headless-shell is headless-only; run "
+                "'agents-browser install --full' or install Chrome/Edge for visible mode."
+            )
 
         cmd = [
             exe,
@@ -261,15 +347,18 @@ class CDPClient:
             f"--user-data-dir={self.user_data_dir}",
             "--no-first-run",
             "--no-default-browser-check",
-            "--window-size=1280,900",
         ]
-        if self.headless:
+        if not shell:
+            cmd.append("--window-size=1280,900")
+        if self.headless and not shell:
             cmd.extend([
                 "--headless=new",
                 "--disable-gpu",
                 "--mute-audio",
                 "--hide-scrollbars",
             ])
+        if _in_container():
+            cmd.append("--disable-dev-shm-usage")
 
         self.proc = subprocess.Popen(
             cmd,
@@ -348,26 +437,10 @@ class CDPClient:
         await self.call("Runtime.enable")
         await self.call("DOM.enable")
 
-        # CDP Network-level ad & tracker blocking
+        # CDP Network-level ad & tracker blocking (+ lite-mode media blocking)
         try:
             await self.call("Network.enable")
-            await self.call("Network.setBlockedURLs", {
-                "urls": [
-                    "*doubleclick.net*",
-                    "*googlesyndication.com*",
-                    "*googleads.g.doubleclick.net*",
-                    "*adservice.google.*",
-                    "*youtube.com/pagead/*",
-                    "*youtube.com/api/stats/ads*",
-                    "*youtube.com/youtubei/v1/player/ad_break*",
-                    "*youtube.com/get_midroll_info*",
-                    "*adnxs.com*",
-                    "*scorecardresearch.com*",
-                    "*taboola.com*",
-                    "*outbrain.com*",
-                    "*criteo.com*",
-                ]
-            })
+            await self._apply_blocked_urls()
         except Exception:
             pass
 
@@ -457,6 +530,45 @@ class CDPClient:
         self.add_event_listener("Network.responseReceived", _on_response)
         self.add_event_listener("Page.downloadWillBegin", _on_download)
 
+    async def _apply_blocked_urls(self) -> None:
+        """Push the blocklist via CDP; lite mode adds image/font/media patterns."""
+        urls = list(_AD_BLOCK_URLS)
+        if self._lite:
+            urls += _LITE_BLOCK_URLS
+        await self.call("Network.setBlockedURLs", {"urls": urls})
+
+    async def _disable_lite(self) -> None:
+        """Turn lite media-blocking off and reload so images/fonts arrive.
+
+        Visual tools need real pixels; a page loaded under blocking never
+        fetched them.
+        """
+        if not self._lite:
+            return
+        self._lite = False
+        if not self._is_ws_open():
+            return
+        try:
+            await self._apply_blocked_urls()
+            await self.call("Page.reload")
+            await self.wait_stable(timeout_ms=6000, quiet_ms=500)
+        except Exception:
+            pass
+
+    async def set_lite(self, enable: bool) -> str:
+        """Toggle lite media-blocking (images/fonts/media skipped on navigations)."""
+        if not enable:
+            await self._disable_lite()
+            return "Lite mode off: full media fidelity."
+        if not self._lite:
+            self._lite = True
+            if self._is_ws_open():
+                try:
+                    await self._apply_blocked_urls()
+                except Exception:
+                    pass
+        return "Lite mode on: images/fonts/media blocked on next navigations (RAM saving)."
+
     async def _listen_loop(self) -> None:
         try:
             async for raw in self.ws:
@@ -501,6 +613,8 @@ class CDPClient:
         # Restart browser with new headless setting
         await self.close()
         self.headless = headless
+        if not headless:
+            self._lite = False
         self.ensure_browser_running()
         await self.connect()
         mode_str = "headless (background)" if self.headless else "visible (window)"
@@ -1188,6 +1302,7 @@ class CDPClient:
 
     async def screenshot(self, full_page: bool = False) -> str:
         """Capture screenshot returning base64 PNG."""
+        await self._disable_lite()
         params: Dict[str, Any] = {"format": "png"}
         if full_page:
             metrics = await self.call("Page.getLayoutMetrics")
@@ -2129,6 +2244,7 @@ class CDPClient:
 
     async def audit(self) -> str:
         """Run an automated developer audit of current page for console errors, layout overflow, broken media, and fonts."""
+        await self._disable_lite()
         js_code = """
         (() => {
             const winW = window.innerWidth;
@@ -2295,6 +2411,7 @@ class CDPClient:
         """Start capturing a screen recording stream via CDP screencast."""
         if self._recording_active:
             return "Screen recording is already active. Call `browser_record_stop` to finish and save."
+        await self._disable_lite()
 
         self._recording_active = True
         self._recording_frames = []

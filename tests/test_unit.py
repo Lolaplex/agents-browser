@@ -64,7 +64,7 @@ def test_help_json_cli_parity():
     spec = help_json()
     cmds = spec["commands"]
     expected = [
-        "serve", "init", "sync", "skills", "open", "system-open", "headless", "close",
+        "serve", "init", "sync", "install", "skills", "open", "system-open", "headless", "close",
         "snapshot", "click", "type", "fill", "select", "scroll", "back", "reload",
         "wait", "find", "tabs", "switch-tab", "search", "read", "scrape", "screenshot",
         "download", "fetch", "extract-pdf", "audit", "inspect", "styles", "layout",
@@ -271,4 +271,69 @@ def test_workspace_scoped_artifacts(monkeypatch, tmp_path):
     monkeypatch.setenv("AGENTS_BROWSER_PROFILE", "sess one")
     c = CDPClient()
     assert c.user_data_dir == host / "browser" / "sessions" / "sess_one"
+
+
+def test_managed_browser_candidates(monkeypatch, tmp_path):
+    from agents_browser import cdp
+    base = tmp_path / "browser"
+    (base / "bin" / "chrome-headless-shell-linux64").mkdir(parents=True)
+    (base / "bin" / "chrome-headless-shell-linux64" / "chrome-headless-shell").write_text("x")
+    (base / "bin" / "chrome-linux64").mkdir(parents=True)
+    (base / "bin" / "chrome-linux64" / "chrome").write_text("x")
+    monkeypatch.setattr(cdp, "browser_home", lambda: base)
+    cands = cdp.managed_browser_candidates()
+    assert len(cands) == 2
+    assert cands[0].endswith("chrome")  # full chrome preferred over shell
+    assert "headless-shell" in cands[1]
+
+
+def test_is_headless_shell():
+    from agents_browser.cdp import is_headless_shell
+    assert is_headless_shell("/x/chrome-headless-shell")
+    assert is_headless_shell("C:\\bin\\chrome-headless-shell.exe")
+    assert not is_headless_shell("/usr/bin/google-chrome")
+
+
+def test_lite_default_and_blocklists(monkeypatch):
+    monkeypatch.delenv("AGENTS_BROWSER_LITE", raising=False)
+    from agents_browser.cdp import CDPClient, _LITE_BLOCK_URLS, _AD_BLOCK_URLS
+    c = CDPClient()
+    assert c._lite is True
+    assert "*.png" in _LITE_BLOCK_URLS and "*.mp4" in _LITE_BLOCK_URLS
+    assert "*doubleclick.net*" in _AD_BLOCK_URLS
+    monkeypatch.setenv("AGENTS_BROWSER_LITE", "0")
+    assert CDPClient()._lite is False
+
+
+def test_disable_lite_offline():
+    import asyncio
+    from agents_browser.cdp import CDPClient
+    c = CDPClient()
+    asyncio.run(c._disable_lite())
+    assert c._lite is False
+
+
+def test_set_lite_toggle():
+    import asyncio
+    from agents_browser.cdp import CDPClient
+    c = CDPClient()
+    assert "off" in asyncio.run(c.set_lite(False))
+    c2 = CDPClient()
+    c2._lite = False
+    assert "on" in asyncio.run(c2.set_lite(True))
+    assert c2._lite is True
+
+
+def test_in_container_detection(monkeypatch):
+    import os
+    import sys
+    from agents_browser import cdp
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setattr(os.path, "exists", lambda p: False)
+    monkeypatch.setattr(Path, "read_text", lambda self, **kw: (_ for _ in ()).throw(OSError()))
+    assert cdp._in_container() is False
+    monkeypatch.setattr(os.path, "exists", lambda p: p == "/.dockerenv")
+    assert cdp._in_container() is True
+    monkeypatch.setattr(sys, "platform", "win32")
+    assert cdp._in_container() is False
 

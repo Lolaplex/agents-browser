@@ -166,6 +166,21 @@ async def browser_set_headless(headless: bool = True) -> str:
 
 
 @mcp.tool()
+async def browser_lite(enable: bool = True) -> str:
+    """Toggle lite mode: skip image/font/media requests on navigations to cut RAM on heavy pages.
+
+    Default on (AGENTS_BROWSER_LITE=0 disables). Automatically turns off when a
+    visual tool (browser_screenshot / browser_audit / browser_record / visible mode)
+    runs, since real pixels need the media loaded.
+    """
+    try:
+        client = get_client()
+        return await client.set_lite(enable)
+    except Exception as e:
+        return f"Error toggling lite mode: {e}"
+
+
+@mcp.tool()
 async def browser_snapshot(interactive_only: bool = False, diff: bool = False) -> str:
     """Capture a clean text snapshot of the current page, headings, and interactive elements with index refs (@1, @2).
 

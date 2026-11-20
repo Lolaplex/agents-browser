@@ -44,6 +44,17 @@ def help_json() -> dict[str, Any]:
                 "description": "Auto-configure MCP server across host IDEs and sync skills",
                 "side_effects": "mutating",
             },
+            "install": {
+                "usage": "agents-browser install [--full]",
+                "description": "Download Chrome for Testing chrome-headless-shell (~100MB) for hosts without a browser",
+                "side_effects": "mutating",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "full": {"type": "boolean", "description": "Download full chrome binary (visible window capable)"},
+                    },
+                },
+            },
             "skills": {
                 "usage": "agents-browser skills [NAME]",
                 "description": "Print agent skill instructions for CLI or MCP workflows ('core', 'browser-browse', 'browser-scrape')",
