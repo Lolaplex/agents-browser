@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `web_search` + `web_extract` MCP tools: dependency-free stdlib HTTP path for hosts with no Chrome/CDP at all (bare VPS, containers). Search runs `auto` (searxng via `AGENTS_SEARXNG_URL`, then duckduckgo, then bing HTML) or a named engine; extract strips script/nav chrome to readable markdown-ish text + links via the `webtext` module (no JS rendering). `browser_search` and `browser_read_url`/`browser_scrape` fall back to the same path when no Chromium session is available.
+
 ### Changed
 - Sync tests point at the workspace root (`<host>/workspaces/default`) now that `AGENTS_HOME` is removed; canonical rules/AGENTS.md land under the selected workspace.
 

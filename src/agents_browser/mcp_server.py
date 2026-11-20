@@ -572,6 +572,43 @@ async def browser_read_url(url: str, max_chars: int = 12000) -> str:
 
 
 @mcp.tool()
+async def web_search(query: str, engine: str = "auto", max_results: int = 10) -> str:
+    """Lightweight web search with no browser — pure stdlib HTTP.
+
+    For hosts without Chrome/CDP (bare VPS, containers). Never touches the
+    CDP client: 'auto' tries searxng (when AGENTS_SEARXNG_URL is set), then
+    duckduckgo, then bing. Returns top results as markdown
+    (Title / URL / Snippet).
+    """
+    try:
+        import asyncio
+
+        from .webtext import web_search as _search
+
+        return await asyncio.to_thread(_search, query, engine, max_results)
+    except Exception as e:
+        return f"Error searching: {e}"
+
+
+@mcp.tool()
+async def web_extract(url: str, max_chars: int = 12000) -> str:
+    """Fetch a URL and extract readable text — pure stdlib HTTP, no browser.
+
+    For hosts without Chrome/CDP. No JS rendering; prefer browser_read_url /
+    browser_read_article when a Chromium session is available and the page
+    needs JavaScript.
+    """
+    try:
+        import asyncio
+
+        from .webtext import fetch_text
+
+        return await asyncio.to_thread(fetch_text, url, max_chars)
+    except Exception as e:
+        return f"Error extracting {url}: {e}"
+
+
+@mcp.tool()
 async def browser_read_article(url: str = "") -> str:
     """Extract clean Reader-Mode markdown of the primary article/content on the page, stripping navbars, footers, and ads.
 

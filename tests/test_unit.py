@@ -110,6 +110,44 @@ def test_mcp_tools_registered():
     assert "browser_record" in tools
     assert "browser_record_start" in tools
     assert "browser_record_stop" in tools
+    # Stdlib no-Chrome web tools
+    assert "web_search" in tools
+    assert "web_extract" in tools
+
+
+def test_webtext_extract_blocks_and_links():
+    from agents_browser.webtext import _TextExtractor
+
+    html = """<html><head><title>T</title><style>x{}</style></head><body>
+    <nav>menu</nav><h1>Head</h1><p>Hello world.</p>
+    <a href="https://a.test/x">alink</a><script>bad()</script>
+    </body></html>"""
+    p = _TextExtractor()
+    p.feed(html)
+    texts = [t for _tag, t in p.blocks]
+    assert "Head" in texts and "Hello world." in texts
+    assert all("menu" not in t and "bad" not in t for t in texts)
+    assert ("alink", "https://a.test/x") in p.links
+    assert p.title == "T"
+
+
+def test_webtext_ddg_parser_and_unwrap():
+    from agents_browser.webtext import _DDGParser, _unwrap_url
+
+    html = """<a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fr.test%2F&rut=x">Title One</a>
+    <a class="result__snippet">snip one</a>"""
+    p = _DDGParser()
+    p.feed(html)
+    assert p.results[0]["title"] == "Title One"
+    assert _unwrap_url(p.results[0]["url"]) == "https://r.test/"
+    assert p.results[0]["snippet"] == "snip one"
+
+
+def test_webtext_search_bad_engine():
+    from agents_browser.webtext import web_search
+
+    out = web_search("q", engine="nope")
+    assert "Unknown engine" in out
 
 
 def test_resolve_screenshot_path():
