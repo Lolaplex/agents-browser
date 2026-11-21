@@ -44,9 +44,14 @@ def _parse_version(v: str) -> tuple[int, ...]:
 
 
 def _cache_file(package_name: str) -> Path:
-    from agents_workspace import Workspace
-    host = Workspace.from_env().host
-    return host.cache / "updates" / f"updates-{package_name}.json"
+    try:
+        from agents_workspace import Host
+        cache_dir = Host.from_env().cache
+    except ImportError:
+        raw = os.environ.get("AGENTS_HOST_DIR", "").strip()
+        host_dir = Path(raw).expanduser() if raw else Path.home() / ".agents"
+        cache_dir = host_dir / "cache"
+    return cache_dir / "updates" / f"updates-{package_name}.json"
 
 
 def format_notice(package_name: str, current: str, latest: str) -> str:

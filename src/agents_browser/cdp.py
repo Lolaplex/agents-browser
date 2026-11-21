@@ -23,10 +23,18 @@ from typing import Any, Callable, Dict, List, Optional, Union
 import websockets
 
 
+def _fallback_host_dir() -> Path:
+    raw = os.environ.get("AGENTS_HOST_DIR", "").strip()
+    return Path(raw).expanduser() if raw else Path.home() / ".agents"
+
+
 def browser_home() -> Path:
     """Host-level browser dir (profile + managed binaries), shared across workspaces."""
-    from agents_workspace import Workspace
-    return Workspace.from_env().host.dir / "browser"
+    try:
+        from agents_workspace import Host
+        return Host.from_env().browser
+    except ImportError:
+        return _fallback_host_dir() / "browser"
 
 
 def managed_browser_candidates() -> List[str]:
@@ -2555,7 +2563,11 @@ class CDPClient:
 
 def artifacts_dir(kind: str) -> Path:
     """Workspace-scoped browser artifact dir: <ws>/browser/<kind>."""
-    from agents_workspace import Workspace
-    d = Workspace.from_env().dir / "browser" / kind
+    try:
+        from agents_workspace import Workspace
+        base = Workspace.from_env().dir
+    except ImportError:
+        base = _fallback_host_dir()
+    d = base / "browser" / kind
     d.mkdir(parents=True, exist_ok=True)
     return d
