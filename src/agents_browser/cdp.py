@@ -30,7 +30,13 @@ def _fallback_host_dir() -> Path:
 
 
 def browser_home() -> Path:
-    """Host-level browser dir (profile + managed binaries), shared across workspaces."""
+    """Host-level browser dir (profile + managed binaries), shared across workspaces.
+
+    ``AGENTS_BROWSER_HOME`` overrides; ``AGENTS_BROWSER_PROFILE`` is a profile
+    name or explicit dir only, never the state root."""
+    raw_home = os.environ.get("AGENTS_BROWSER_HOME", "").strip()
+    if raw_home:
+        return Path(raw_home).expanduser()
     try:
         from agents_workspace import Host
         return Host.from_env().browser
