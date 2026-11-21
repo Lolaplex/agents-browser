@@ -17,10 +17,152 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import warnings
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Union
 import websockets
+
+
+def _fallback_host_dir() -> Path:
+    raw = os.environ.get("AGENTS_HOST_DIR", "").strip()
+    return Path(raw).expanduser() if raw else Path.home() / ".agents"
+
+
+def browser_home() -> Path:
+    """Host-level browser dir (profile + managed binaries), shared across workspaces.
+
+    ``AGENTS_BROWSER_HOME`` overrides; ``AGENTS_BROWSER_PROFILE`` is a profile
+    name or explicit dir only, never the state root."""
+    raw_home = os.environ.get("AGENTS_BROWSER_HOME", "").strip()
+    if raw_home:
+        return Path(raw_home).expanduser()
+    try:
+        from agents_workspace import Host
+        return Host.from_env().browser
+    except ImportError:
+        return _fallback_host_dir() / "browser"
+
+
+def _resolve_ws_profile_name() -> str:
+    """Active workspace's ``browser_profile`` without auto-creating workspaces."""
+    try:
+        from agents_workspace import Host, Workspace
+    except ImportError:
+        return "default"
+    env = os.environ
+    if env.get("AGENTS_WORKSPACE_ROOT", "").strip():
+        try:
+            return Workspace.from_env(env).browser_profile
+        except Exception:
+            return "default"
+    try:
+        host = Host.from_env(env)
+        ws_id = env.get("AGENTS_WORKSPACE", "").strip()
+        if ws_id:
+            if host.workspace_exists(ws_id, env=env):
+                return host.workspace(ws_id, env=env).browser_profile
+            return "default"
+        if not host.list_workspaces(env=env):
+            return "default"
+        return host.select_workspace(env=env).browser_profile
+    except Exception:
+        return "default"
+
+
+def _is_path_like(raw: str) -> bool:
+    return (
+        os.sep in raw
+        or (bool(os.altsep) and os.altsep in raw)
+        or Path(raw).is_absolute()
+    )
+
+
+def _same_path(a: Path, b: Path) -> bool:
+    try:
+        return a.expanduser().resolve() == b.expanduser().resolve()
+    except OSError:
+        return a == b
+
+
+def _warn_if_outside_home(target: Path, home: Path) -> None:
+    try:
+        res_target = target.expanduser().resolve()
+        res_home = home.expanduser().resolve()
+    except OSError:
+        return
+    if res_target != res_home and res_home not in res_target.parents:
+        warnings.warn(
+            f"user_data_dir {target} is outside browser_home() ({home})",
+            UserWarning,
+            stacklevel=3,
+        )
+
+
+def managed_browser_candidates() -> List[str]:
+    """Binaries under ``<browser_home>/bin`` installed via `agents-browser install`.
+
+    Full ``chrome`` first (visible-capable), then ``chrome-headless-shell``.
+    """
+    base = browser_home() / "bin"
+    if not base.is_dir():
+        return []
+    out: List[str] = []
+    for shell in (False, True):
+        for sub in sorted(base.iterdir()):
+            if not sub.is_dir():
+                continue
+            if shell != sub.name.startswith("chrome-headless-shell"):
+                continue
+            exe = sub / ("chrome-headless-shell" if shell else "chrome")
+            for cand in (exe, exe.parent / (exe.name + ".exe")):
+                if cand.is_file():
+                    out.append(str(cand))
+    return out
+
+
+def is_headless_shell(exe_path: str) -> bool:
+    """True for a Chrome-for-Testing ``chrome-headless-shell`` binary (headless-only)."""
+    return "headless-shell" in os.path.basename(exe_path).lower()
+
+
+def _in_container() -> bool:
+    """True inside Docker/K8s-style containers (small /dev/shm risk)."""
+    if not sys.platform.startswith("linux"):
+        return False
+    if os.path.exists("/.dockerenv") or os.path.exists("/run/.containerenv"):
+        return True
+    try:
+        cgroup = Path("/proc/1/cgroup").read_text(errors="replace")
+        return any(k in cgroup for k in ("docker", "kubepods", "containerd", "podman", "lxc"))
+    except Exception:
+        return False
+
+
+# Network-level ad & tracker blocking (always on for managed sessions).
+_AD_BLOCK_URLS = [
+    "*doubleclick.net*",
+    "*googlesyndication.com*",
+    "*googleads.g.doubleclick.net*",
+    "*adservice.google.*",
+    "*youtube.com/pagead/*",
+    "*youtube.com/api/stats/ads*",
+    "*youtube.com/youtubei/v1/player/ad_break*",
+    "*youtube.com/get_midroll_info*",
+    "*adnxs.com*",
+    "*scorecardresearch.com*",
+    "*taboola.com*",
+    "*outbrain.com*",
+    "*criteo.com*",
+]
+
+# Lite mode: skip decoded media (the RAM spike) — DOM text stays.
+# Auto-off when a visual tool (screenshot/audit/record/visible) runs.
+_LITE_BLOCK_URLS = [
+    "*.png", "*.jpg", "*.jpeg", "*.webp", "*.avif", "*.gif",
+    "*.woff", "*.woff2", "*.ttf", "*.otf",
+    "*.mp4", "*.webm", "*.mov", "*.mp3", "*.wav", "*.ogg",
+]
 
 
 def find_browser_executable() -> str:
@@ -99,7 +241,15 @@ def find_browser_executable() -> str:
         if path and os.path.exists(path):
             return path
 
-    raise RuntimeError("No Chromium-based browser (Chrome, Edge, Brave, Vivaldi) found on system. Set AGENTS_BROWSER_BIN or CHROME_PATH.")
+    for path in managed_browser_candidates():
+        if os.path.exists(path):
+            return path
+
+    raise RuntimeError(
+        "No Chromium-based browser (Chrome, Edge, Brave, Vivaldi) found on system. "
+        "Run 'agents-browser install' (chrome-headless-shell, ~100MB), install a "
+        "browser, or set AGENTS_BROWSER_BIN / CHROME_PATH."
+    )
 
 
 class CDPClient:
@@ -113,27 +263,50 @@ class CDPClient:
         headless: Optional[bool] = None,
         session: Optional[str] = None,
     ):
+        explicit_dir: Optional[Path] = None
+        env_profile_name = os.environ.get("AGENTS_BROWSER_PROFILE_NAME", "").strip()
         env_profile = os.environ.get("AGENTS_BROWSER_PROFILE", "").strip()
-        if not env_profile:
+        if not env_profile and not env_profile_name:
             legacy = os.environ.get("AGENTS_BROWSER_SESSION", "").strip()
             if legacy:
-                import warnings
                 warnings.warn(
                     "AGENTS_BROWSER_SESSION is deprecated; use AGENTS_BROWSER_PROFILE",
-                    DeprecationWarning, stacklevel=3,
+                    DeprecationWarning,
+                    stacklevel=3,
                 )
                 env_profile = legacy
-        self.session = session or env_profile
+
+        base_dir = browser_home()
+        if env_profile and _is_path_like(env_profile):
+            candidate_p = Path(env_profile)
+            if not _same_path(candidate_p, base_dir):
+                explicit_dir = candidate_p
+            env_profile = ""
+
+        resolved_profile = session or env_profile_name or env_profile or _resolve_ws_profile_name()
+        self.session = session or env_profile_name or env_profile
         self.host = host
-        from agents_workspace import Workspace
-        base_dir = Workspace.from_env().host.dir / "browser"
         if user_data_dir:
             self.user_data_dir = Path(user_data_dir)
-        elif self.session and self.session != "default":
-            safe_sess = "".join(c if c.isalnum() or c in ("-", "_") else "_" for c in self.session)
-            self.user_data_dir = base_dir / "sessions" / safe_sess
+            _warn_if_outside_home(self.user_data_dir, base_dir)
+        elif explicit_dir is not None:
+            self.user_data_dir = explicit_dir
+            _warn_if_outside_home(self.user_data_dir, base_dir)
         else:
-            self.user_data_dir = base_dir
+            safe_sess = "".join(
+                c if c.isalnum() or c in ("-", "_") else "_" for c in resolved_profile
+            ) or "default"
+            session_dir = base_dir / "sessions" / safe_sess
+            legacy_default = base_dir / "Default"
+            if safe_sess == "default" and not session_dir.exists() and legacy_default.is_dir():
+                warnings.warn(
+                    f"legacy browser profile {legacy_default} is deprecated; migrate to {session_dir}",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
+                self.user_data_dir = legacy_default
+            else:
+                self.user_data_dir = session_dir
 
         if port is not None:
             self.port = int(port)
@@ -173,6 +346,7 @@ class CDPClient:
         self._recording_listener: Optional[Callable[[Dict[str, Any]], None]] = None
         self._last_snapshot_items: List[str] = []
         self._light_mode: bool = False
+        self._lite: bool = os.environ.get("AGENTS_BROWSER_LITE", "1").strip().lower() not in ("0", "false", "no")
 
     def _load_session_state(self) -> Dict[str, Any]:
         try:
@@ -254,6 +428,12 @@ class CDPClient:
 
         self.user_data_dir.mkdir(parents=True, exist_ok=True)
         exe = find_browser_executable()
+        shell = is_headless_shell(exe)
+        if shell and not self.headless:
+            raise RuntimeError(
+                "chrome-headless-shell is headless-only; run "
+                "'agents-browser install --full' or install Chrome/Edge for visible mode."
+            )
 
         cmd = [
             exe,
@@ -261,15 +441,18 @@ class CDPClient:
             f"--user-data-dir={self.user_data_dir}",
             "--no-first-run",
             "--no-default-browser-check",
-            "--window-size=1280,900",
         ]
-        if self.headless:
+        if not shell:
+            cmd.append("--window-size=1280,900")
+        if self.headless and not shell:
             cmd.extend([
                 "--headless=new",
                 "--disable-gpu",
                 "--mute-audio",
                 "--hide-scrollbars",
             ])
+        if _in_container():
+            cmd.append("--disable-dev-shm-usage")
 
         self.proc = subprocess.Popen(
             cmd,
@@ -348,26 +531,10 @@ class CDPClient:
         await self.call("Runtime.enable")
         await self.call("DOM.enable")
 
-        # CDP Network-level ad & tracker blocking
+        # CDP Network-level ad & tracker blocking (+ lite-mode media blocking)
         try:
             await self.call("Network.enable")
-            await self.call("Network.setBlockedURLs", {
-                "urls": [
-                    "*doubleclick.net*",
-                    "*googlesyndication.com*",
-                    "*googleads.g.doubleclick.net*",
-                    "*adservice.google.*",
-                    "*youtube.com/pagead/*",
-                    "*youtube.com/api/stats/ads*",
-                    "*youtube.com/youtubei/v1/player/ad_break*",
-                    "*youtube.com/get_midroll_info*",
-                    "*adnxs.com*",
-                    "*scorecardresearch.com*",
-                    "*taboola.com*",
-                    "*outbrain.com*",
-                    "*criteo.com*",
-                ]
-            })
+            await self._apply_blocked_urls()
         except Exception:
             pass
 
@@ -457,6 +624,46 @@ class CDPClient:
         self.add_event_listener("Network.responseReceived", _on_response)
         self.add_event_listener("Page.downloadWillBegin", _on_download)
 
+    async def _apply_blocked_urls(self) -> None:
+        """Push the blocklist via CDP; lite mode adds image/font/media patterns."""
+        urls = list(_AD_BLOCK_URLS)
+        if self._lite:
+            urls += _LITE_BLOCK_URLS
+        await self.call("Network.setBlockedURLs", {"urls": urls})
+
+    async def _disable_lite(self) -> None:
+        """Turn lite media-blocking off and reload so images/fonts arrive.
+
+        Visual tools need real pixels; a page loaded under blocking never
+        fetched them. Connects first when needed (one-shot CLI calls reopen
+        the session per invocation).
+        """
+        if not self._lite:
+            return
+        self._lite = False
+        try:
+            if not self._is_ws_open():
+                await self.connect()
+            await self._apply_blocked_urls()
+            await self.call("Page.reload")
+            await self.wait_stable(timeout_ms=6000, quiet_ms=500)
+        except Exception:
+            pass
+
+    async def set_lite(self, enable: bool) -> str:
+        """Toggle lite media-blocking (images/fonts/media skipped on navigations)."""
+        if not enable:
+            await self._disable_lite()
+            return "Lite mode off: full media fidelity."
+        if not self._lite:
+            self._lite = True
+            if self._is_ws_open():
+                try:
+                    await self._apply_blocked_urls()
+                except Exception:
+                    pass
+        return "Lite mode on: images/fonts/media blocked on next navigations (RAM saving)."
+
     async def _listen_loop(self) -> None:
         try:
             async for raw in self.ws:
@@ -501,6 +708,8 @@ class CDPClient:
         # Restart browser with new headless setting
         await self.close()
         self.headless = headless
+        if not headless:
+            self._lite = False
         self.ensure_browser_running()
         await self.connect()
         mode_str = "headless (background)" if self.headless else "visible (window)"
@@ -523,6 +732,8 @@ class CDPClient:
             await self.connect()
 
         self._last_download_info = None
+        self.console_logs.clear()
+        self.network_logs.clear()
         await self.call("Page.navigate", {"url": url})
         await asyncio.sleep(1.0)
 
@@ -1109,6 +1320,8 @@ class CDPClient:
 
     async def reload(self, ignore_cache: bool = False) -> str:
         """Reload current page."""
+        self.console_logs.clear()
+        self.network_logs.clear()
         await self.call("Page.reload", {"ignoreCache": ignore_cache})
         await asyncio.sleep(1.0)
         return "Page reloaded"
@@ -1188,6 +1401,7 @@ class CDPClient:
 
     async def screenshot(self, full_page: bool = False) -> str:
         """Capture screenshot returning base64 PNG."""
+        await self._disable_lite()
         params: Dict[str, Any] = {"format": "png"}
         if full_page:
             metrics = await self.call("Page.getLayoutMetrics")
@@ -1225,6 +1439,8 @@ class CDPClient:
         """Switch active CDP focus to another tab ID."""
         await self.connect(target_id)
         await self.call("Target.activateTarget", {"targetId": target_id})
+        self.console_logs.clear()
+        self.network_logs.clear()
         self._save_session_state(target_id=target_id)
         return f"Switched to tab: {target_id}"
 
@@ -2129,6 +2345,7 @@ class CDPClient:
 
     async def audit(self) -> str:
         """Run an automated developer audit of current page for console errors, layout overflow, broken media, and fonts."""
+        await self._disable_lite()
         js_code = """
         (() => {
             const winW = window.innerWidth;
@@ -2295,6 +2512,7 @@ class CDPClient:
         """Start capturing a screen recording stream via CDP screencast."""
         if self._recording_active:
             return "Screen recording is already active. Call `browser_record_stop` to finish and save."
+        await self._disable_lite()
 
         self._recording_active = True
         self._recording_frames = []
@@ -2391,14 +2609,16 @@ class CDPClient:
                 pass
 
             if out_path.exists() and out_path.stat().st_size > 0:
-                return f"Screen recording saved: {out_path} ({len(frames)} frames, {out_path.stat().st_size} bytes)"
+                note = " (mostly static page: few unique frames)" if len(frames) < 5 else ""
+                return f"Screen recording saved: {out_path} ({len(frames)} frames, {out_path.stat().st_size} bytes){note}"
 
         # Fallback if ffmpeg is missing or failed: save frames to a folder
         frames_dir = self.recordings_dir / f"frames-{stamp}"
         frames_dir.mkdir(parents=True, exist_ok=True)
         for i, f in enumerate(frames):
             (frames_dir / f"frame_{i:04d}.jpg").write_bytes(base64.b64decode(f))
-        return f"Screen recording frames saved ({len(frames)} frames) to: {frames_dir} (Install ffmpeg to enable direct MP4 export)"
+        note = " (mostly static page: few unique frames)" if len(frames) < 5 else ""
+        return f"Screen recording frames saved ({len(frames)} frames) to: {frames_dir}{note} (Install ffmpeg to enable direct MP4 export)"
 
     async def record(self, duration_sec: float = 5.0, fps: int = 15, path: str = "") -> str:
         """One-shot helper: record screen for `duration_sec` seconds and export to MP4."""
@@ -2429,7 +2649,11 @@ class CDPClient:
 
 def artifacts_dir(kind: str) -> Path:
     """Workspace-scoped browser artifact dir: <ws>/browser/<kind>."""
-    from agents_workspace import Workspace
-    d = Workspace.from_env().dir / "browser" / kind
+    try:
+        from agents_workspace import Workspace
+        base = Workspace.from_env().dir
+    except ImportError:
+        base = _fallback_host_dir()
+    d = base / "browser" / kind
     d.mkdir(parents=True, exist_ok=True)
     return d

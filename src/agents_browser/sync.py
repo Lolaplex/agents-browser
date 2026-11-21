@@ -8,8 +8,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-
-from agents_workspace import Workspace
 import shutil
 import sys
 from pathlib import Path
@@ -33,8 +31,11 @@ ALWAYS_ON_BODY = """# Browser Control (`agents-browser`)
 
 
 def _agents_home() -> Path:
-    from agents_workspace import Workspace
-    return Workspace.from_env().root
+    try:
+        from agents_workspace import Workspace
+        return Workspace.from_env().dir
+    except ImportError:
+        return _agents_host_dir()
 
 
 def mcp_entry() -> Dict[str, Any]:
@@ -152,10 +153,28 @@ def _upsert_agents_md(path: Path) -> str:
     return str(path)
 
 
+def _agents_host_dir() -> Path:
+    """Host root (~/.agents) — inject targets live host-level (NAMING C62)."""
+    try:
+        from agents_workspace import Host
+        return Host.from_env().dir
+    except ImportError:
+        raw = os.environ.get("AGENTS_HOST_DIR", "").strip()
+        return Path(raw).expanduser() if raw else Path.home() / ".agents"
+
+
+def _host_mcp_json() -> Path:
+    try:
+        from agents_workspace import Host
+        return Host.from_env().mcp_json
+    except ImportError:
+        return _agents_host_dir() / "mcp.json"
+
+
 def sync_always_on_files() -> List[str]:
     """Splice <!-- agents-browser-sync --> block into global AGENTS.md / CLAUDE.md files."""
     home = Path.home()
-    agents_home = _agents_home()
+    agents_home = _agents_host_dir()
     targets = [
         agents_home / "AGENTS.md",
         home / ".gemini" / "config" / "AGENTS.md",
@@ -187,7 +206,7 @@ def known_host_mcp_paths() -> List[Path]:
     home = Path.home()
     paths: List[Path] = [
         home / ".cursor" / "mcp.json",
-        Workspace.from_env().host.mcp_json,
+        _host_mcp_json(),
         home / ".claude.json",
         home / ".claude" / "mcp.json",
         home / ".claude" / "settings.json",

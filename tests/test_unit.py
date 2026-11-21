@@ -64,7 +64,7 @@ def test_help_json_cli_parity():
     spec = help_json()
     cmds = spec["commands"]
     expected = [
-        "serve", "init", "sync", "skills", "open", "system-open", "headless", "close",
+        "serve", "init", "sync", "install", "skills", "open", "system-open", "headless", "close",
         "snapshot", "click", "type", "fill", "select", "scroll", "back", "reload",
         "wait", "find", "tabs", "switch-tab", "search", "read", "scrape", "screenshot",
         "download", "fetch", "extract-pdf", "audit", "inspect", "styles", "layout",
@@ -193,7 +193,7 @@ def test_sync_host_rules_and_always_on(monkeypatch):
         assert "alwaysApply: true" in mdc.read_text(encoding="utf-8")
 
         files = sync_mod.sync_always_on_files()
-        agents_md = fake_home / ".agents" / "workspaces" / "default" / "AGENTS.md"
+        agents_md = fake_home / ".agents" / "AGENTS.md"
         assert agents_md.is_file()
         assert sync_mod.MARKER in agents_md.read_text(encoding="utf-8")
         assert len(files) >= 4
@@ -271,4 +271,157 @@ def test_workspace_scoped_artifacts(monkeypatch, tmp_path):
     monkeypatch.setenv("AGENTS_BROWSER_PROFILE", "sess one")
     c = CDPClient()
     assert c.user_data_dir == host / "browser" / "sessions" / "sess_one"
+
+
+def test_default_session_dir_ws_profile_legacy_and_outside_warning(monkeypatch, tmp_path):
+    import builtins
+    import warnings
+    from agents_browser.cdp import CDPClient
+
+    host = tmp_path / "host"
+    monkeypatch.setenv("AGENTS_HOST_DIR", str(host))
+    monkeypatch.delenv("AGENTS_BROWSER_PROFILE", raising=False)
+    monkeypatch.delenv("AGENTS_BROWSER_PROFILE_NAME", raising=False)
+    monkeypatch.delenv("AGENTS_BROWSER_SESSION", raising=False)
+    monkeypatch.delenv("AGENTS_WORKSPACE", raising=False)
+
+    # Default resolves under <host>/browser/sessions/default
+    c0 = CDPClient()
+    assert c0.user_data_dir == host / "browser" / "sessions" / "default"
+
+    # AGENTS_BROWSER_PROFILE set to host/browser path (by Workspace.env) uses ws.browser_profile
+    (host / "workspaces" / "work").mkdir(parents=True)
+    (host / "workspaces" / "work" / "workspace.json").write_text(
+        json.dumps({"id": "work", "browser_profile": "work-prof"}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AGENTS_WORKSPACE", "work")
+    monkeypatch.setenv("AGENTS_BROWSER_PROFILE", str(host / "browser"))
+    c_ws = CDPClient()
+    assert c_ws.user_data_dir == host / "browser" / "sessions" / "work-prof"
+
+    # Legacy <host>/browser/Default fallback when sessions/default does not exist
+    host_leg = tmp_path / "host_leg"
+    monkeypatch.setenv("AGENTS_HOST_DIR", str(host_leg))
+    monkeypatch.delenv("AGENTS_WORKSPACE", raising=False)
+    monkeypatch.delenv("AGENTS_BROWSER_PROFILE", raising=False)
+    legacy = host_leg / "browser" / "Default"
+    legacy.mkdir(parents=True)
+    with warnings.catch_warnings(record=True) as seen:
+        warnings.simplefilter("always")
+        c_leg = CDPClient(session="default")
+    assert c_leg.user_data_dir == legacy
+    assert any(issubclass(w.category, DeprecationWarning) for w in seen)
+    monkeypatch.setenv("AGENTS_HOST_DIR", str(host))
+
+    # Warning when explicit user_data_dir escapes browser_home()
+    outside = tmp_path / "outside-profile"
+    with warnings.catch_warnings(record=True) as seen:
+        warnings.simplefilter("always")
+        CDPClient(user_data_dir=str(outside))
+    assert any(
+        issubclass(w.category, UserWarning) and "outside browser_home()" in str(w.message)
+        for w in seen
+    )
+
+    # Standalone fallback without agents_workspace
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "agents_workspace" or name.startswith("agents_workspace."):
+            raise ImportError("no agents_workspace")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    c_standalone = CDPClient()
+    assert c_standalone.user_data_dir == host / "browser" / "sessions" / "default"
+
+
+def test_managed_browser_candidates(monkeypatch, tmp_path):
+    from agents_browser import cdp
+    base = tmp_path / "browser"
+    (base / "bin" / "chrome-headless-shell-linux64").mkdir(parents=True)
+    (base / "bin" / "chrome-headless-shell-linux64" / "chrome-headless-shell").write_text("x")
+    (base / "bin" / "chrome-linux64").mkdir(parents=True)
+    (base / "bin" / "chrome-linux64" / "chrome").write_text("x")
+    monkeypatch.setattr(cdp, "browser_home", lambda: base)
+    cands = cdp.managed_browser_candidates()
+    assert len(cands) == 2
+    assert cands[0].endswith("chrome")  # full chrome preferred over shell
+    assert "headless-shell" in cands[1]
+
+
+def test_is_headless_shell():
+    from agents_browser.cdp import is_headless_shell
+    assert is_headless_shell("/x/chrome-headless-shell")
+    assert is_headless_shell("C:\\bin\\chrome-headless-shell.exe")
+    assert not is_headless_shell("/usr/bin/google-chrome")
+
+
+def test_lite_default_and_blocklists(monkeypatch):
+    monkeypatch.delenv("AGENTS_BROWSER_LITE", raising=False)
+    from agents_browser.cdp import CDPClient, _LITE_BLOCK_URLS, _AD_BLOCK_URLS
+    c = CDPClient()
+    assert c._lite is True
+    assert "*.png" in _LITE_BLOCK_URLS and "*.mp4" in _LITE_BLOCK_URLS
+    assert "*doubleclick.net*" in _AD_BLOCK_URLS
+    monkeypatch.setenv("AGENTS_BROWSER_LITE", "0")
+    assert CDPClient()._lite is False
+
+
+def test_disable_lite_offline():
+    import asyncio
+    from agents_browser.cdp import CDPClient
+    c = CDPClient()
+    asyncio.run(c._disable_lite())
+    assert c._lite is False
+
+
+def test_set_lite_toggle():
+    import asyncio
+    from agents_browser.cdp import CDPClient
+    c = CDPClient()
+    assert "off" in asyncio.run(c.set_lite(False))
+    c2 = CDPClient()
+    c2._lite = False
+    assert "on" in asyncio.run(c2.set_lite(True))
+    assert c2._lite is True
+
+
+def test_fetch_text_json_passthrough(monkeypatch):
+    from agents_browser import webtext
+    monkeypatch.setattr(
+        webtext, "_request", lambda url, timeout=20.0: b'{"a": 1, "b": [2, 3]}'
+    )
+    out = webtext.fetch_text("https://api.test/data")
+    assert "```json" in out and '"a": 1' in out
+
+
+def test_fill_form_accepts_dict_alias(monkeypatch):
+    import asyncio
+    from agents_browser import mcp_server
+
+    class Fake:
+        async def fill_form(self, fields, submit_selector=""):
+            return f"{fields}|{submit_selector}"
+
+    monkeypatch.setattr(mcp_server, "_client", Fake())
+    out = asyncio.run(mcp_server.browser_fill_form(fields={"@1": "x"}))
+    assert "'@1': 'x'" in out
+    out2 = asyncio.run(mcp_server.browser_fill_form(fields_json='{"@2": "y"}'))
+    assert "'@2': 'y'" in out2
+
+
+def test_in_container_detection(monkeypatch):
+    import os
+    import sys
+    from agents_browser import cdp
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setattr(os.path, "exists", lambda p: False)
+    monkeypatch.setattr(Path, "read_text", lambda self, **kw: (_ for _ in ()).throw(OSError()))
+    assert cdp._in_container() is False
+    monkeypatch.setattr(os.path, "exists", lambda p: p == "/.dockerenv")
+    assert cdp._in_container() is True
+    monkeypatch.setattr(sys, "platform", "win32")
+    assert cdp._in_container() is False
 

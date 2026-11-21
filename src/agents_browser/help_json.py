@@ -26,6 +26,7 @@ def help_json() -> dict[str, Any]:
     return {
         "name": "agents-browser",
         "version": _version(),
+        "cordis_expose": True,
         "description": "Minimal CDP Browser MCP & CLI for AI coding agents",
         "commands": {
             "serve": {
@@ -42,6 +43,17 @@ def help_json() -> dict[str, Any]:
                 "usage": "agents-browser sync [--init]",
                 "description": "Auto-configure MCP server across host IDEs and sync skills",
                 "side_effects": "mutating",
+            },
+            "install": {
+                "usage": "agents-browser install [--full]",
+                "description": "Download Chrome for Testing chrome-headless-shell (~100MB) for hosts without a browser",
+                "side_effects": "mutating",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "full": {"type": "boolean", "description": "Download full chrome binary (visible window capable)"},
+                    },
+                },
             },
             "skills": {
                 "usage": "agents-browser skills [NAME]",

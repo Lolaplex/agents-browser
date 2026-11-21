@@ -166,6 +166,21 @@ async def browser_set_headless(headless: bool = True) -> str:
 
 
 @mcp.tool()
+async def browser_lite(enable: bool = True) -> str:
+    """Toggle lite mode: skip image/font/media requests on navigations to cut RAM on heavy pages.
+
+    Default on (AGENTS_BROWSER_LITE=0 disables). Automatically turns off when a
+    visual tool (browser_screenshot / browser_audit / browser_record / visible mode)
+    runs, since real pixels need the media loaded.
+    """
+    try:
+        client = get_client()
+        return await client.set_lite(enable)
+    except Exception as e:
+        return f"Error toggling lite mode: {e}"
+
+
+@mcp.tool()
 async def browser_snapshot(interactive_only: bool = False, diff: bool = False) -> str:
     """Capture a clean text snapshot of the current page, headings, and interactive elements with index refs (@1, @2).
 
@@ -643,19 +658,20 @@ async def browser_scrape(selector: str = "body", mode: str = "text", url: str = 
 
 
 @mcp.tool()
-async def browser_fill_form(fields_json: str, submit_selector: str = "") -> str:
+async def browser_fill_form(fields_json: str = "", fields: Optional[dict] = None, submit_selector: str = "") -> str:
     """Batch fill multiple form fields in one call and optionally submit.
 
     Parameters:
-    - fields_json: JSON string mapping target ref/selector to value, e.g. '{"@1": "myuser", "@2": "mypass"}'
+    - fields: Dict mapping target ref/selector to value, e.g. {"@1": "myuser", "@2": "mypass"}
+    - fields_json: Same mapping as a JSON string (either form works)
     - submit_selector: Optional CSS selector or @ref to click after filling (e.g. '@3' or '#submit').
     """
     try:
         client = get_client()
-        fields = json.loads(fields_json)
-        if not isinstance(fields, dict):
-            return "Error: fields_json must be a JSON dictionary of {target: value}"
-        return await client.fill_form(fields, submit_selector=submit_selector)
+        data = fields if isinstance(fields, dict) else json.loads(fields_json or "{}")
+        if not isinstance(data, dict) or not data:
+            return "Error: pass fields={...} (dict) or fields_json='{...}' (JSON string)."
+        return await client.fill_form(data, submit_selector=submit_selector)
     except Exception as e:
         return f"Error batch filling form: {e}"
 
