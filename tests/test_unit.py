@@ -193,7 +193,7 @@ def test_sync_host_rules_and_always_on(monkeypatch):
         assert "alwaysApply: true" in mdc.read_text(encoding="utf-8")
 
         files = sync_mod.sync_always_on_files()
-        agents_md = fake_home / ".agents" / "workspaces" / "default" / "AGENTS.md"
+        agents_md = fake_home / ".agents" / "AGENTS.md"
         assert agents_md.is_file()
         assert sync_mod.MARKER in agents_md.read_text(encoding="utf-8")
         assert len(files) >= 4

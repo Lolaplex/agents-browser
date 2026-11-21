@@ -34,7 +34,7 @@ ALWAYS_ON_BODY = """# Browser Control (`agents-browser`)
 
 def _agents_home() -> Path:
     from agents_workspace import Workspace
-    return Workspace.from_env().root
+    return Workspace.from_env().dir
 
 
 def mcp_entry() -> Dict[str, Any]:
@@ -152,10 +152,16 @@ def _upsert_agents_md(path: Path) -> str:
     return str(path)
 
 
+def _agents_host_dir() -> Path:
+    """Host root (~/.agents) — inject targets live host-level (NAMING C62)."""
+    from agents_workspace import Host
+    return Host.from_env().dir
+
+
 def sync_always_on_files() -> List[str]:
     """Splice <!-- agents-browser-sync --> block into global AGENTS.md / CLAUDE.md files."""
     home = Path.home()
-    agents_home = _agents_home()
+    agents_home = _agents_host_dir()
     targets = [
         agents_home / "AGENTS.md",
         home / ".gemini" / "config" / "AGENTS.md",
