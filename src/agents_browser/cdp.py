@@ -17,6 +17,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import warnings
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Union
@@ -35,6 +36,61 @@ def browser_home() -> Path:
         return Host.from_env().browser
     except ImportError:
         return _fallback_host_dir() / "browser"
+
+
+def _resolve_ws_profile_name() -> str:
+    """Active workspace's ``browser_profile`` without auto-creating workspaces."""
+    try:
+        from agents_workspace import Host, Workspace
+    except ImportError:
+        return "default"
+    env = os.environ
+    if env.get("AGENTS_WORKSPACE_ROOT", "").strip():
+        try:
+            return Workspace.from_env(env).browser_profile
+        except Exception:
+            return "default"
+    try:
+        host = Host.from_env(env)
+        ws_id = env.get("AGENTS_WORKSPACE", "").strip()
+        if ws_id:
+            if host.workspace_exists(ws_id, env=env):
+                return host.workspace(ws_id, env=env).browser_profile
+            return "default"
+        if not host.list_workspaces(env=env):
+            return "default"
+        return host.select_workspace(env=env).browser_profile
+    except Exception:
+        return "default"
+
+
+def _is_path_like(raw: str) -> bool:
+    return (
+        os.sep in raw
+        or (bool(os.altsep) and os.altsep in raw)
+        or Path(raw).is_absolute()
+    )
+
+
+def _same_path(a: Path, b: Path) -> bool:
+    try:
+        return a.expanduser().resolve() == b.expanduser().resolve()
+    except OSError:
+        return a == b
+
+
+def _warn_if_outside_home(target: Path, home: Path) -> None:
+    try:
+        res_target = target.expanduser().resolve()
+        res_home = home.expanduser().resolve()
+    except OSError:
+        return
+    if res_target != res_home and res_home not in res_target.parents:
+        warnings.warn(
+            f"user_data_dir {target} is outside browser_home() ({home})",
+            UserWarning,
+            stacklevel=3,
+        )
 
 
 def managed_browser_candidates() -> List[str]:
@@ -201,26 +257,50 @@ class CDPClient:
         headless: Optional[bool] = None,
         session: Optional[str] = None,
     ):
+        explicit_dir: Optional[Path] = None
+        env_profile_name = os.environ.get("AGENTS_BROWSER_PROFILE_NAME", "").strip()
         env_profile = os.environ.get("AGENTS_BROWSER_PROFILE", "").strip()
-        if not env_profile:
+        if not env_profile and not env_profile_name:
             legacy = os.environ.get("AGENTS_BROWSER_SESSION", "").strip()
             if legacy:
-                import warnings
                 warnings.warn(
                     "AGENTS_BROWSER_SESSION is deprecated; use AGENTS_BROWSER_PROFILE",
-                    DeprecationWarning, stacklevel=3,
+                    DeprecationWarning,
+                    stacklevel=3,
                 )
                 env_profile = legacy
-        self.session = session or env_profile
-        self.host = host
+
         base_dir = browser_home()
+        if env_profile and _is_path_like(env_profile):
+            candidate_p = Path(env_profile)
+            if not _same_path(candidate_p, base_dir):
+                explicit_dir = candidate_p
+            env_profile = ""
+
+        resolved_profile = session or env_profile_name or env_profile or _resolve_ws_profile_name()
+        self.session = session or env_profile_name or env_profile
+        self.host = host
         if user_data_dir:
             self.user_data_dir = Path(user_data_dir)
-        elif self.session and self.session != "default":
-            safe_sess = "".join(c if c.isalnum() or c in ("-", "_") else "_" for c in self.session)
-            self.user_data_dir = base_dir / "sessions" / safe_sess
+            _warn_if_outside_home(self.user_data_dir, base_dir)
+        elif explicit_dir is not None:
+            self.user_data_dir = explicit_dir
+            _warn_if_outside_home(self.user_data_dir, base_dir)
         else:
-            self.user_data_dir = base_dir
+            safe_sess = "".join(
+                c if c.isalnum() or c in ("-", "_") else "_" for c in resolved_profile
+            ) or "default"
+            session_dir = base_dir / "sessions" / safe_sess
+            legacy_default = base_dir / "Default"
+            if safe_sess == "default" and not session_dir.exists() and legacy_default.is_dir():
+                warnings.warn(
+                    f"legacy browser profile {legacy_default} is deprecated; migrate to {session_dir}",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
+                self.user_data_dir = legacy_default
+            else:
+                self.user_data_dir = session_dir
 
         if port is not None:
             self.port = int(port)

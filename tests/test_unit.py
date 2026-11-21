@@ -273,6 +273,70 @@ def test_workspace_scoped_artifacts(monkeypatch, tmp_path):
     assert c.user_data_dir == host / "browser" / "sessions" / "sess_one"
 
 
+def test_default_session_dir_ws_profile_legacy_and_outside_warning(monkeypatch, tmp_path):
+    import builtins
+    import warnings
+    from agents_browser.cdp import CDPClient
+
+    host = tmp_path / "host"
+    monkeypatch.setenv("AGENTS_HOST_DIR", str(host))
+    monkeypatch.delenv("AGENTS_BROWSER_PROFILE", raising=False)
+    monkeypatch.delenv("AGENTS_BROWSER_PROFILE_NAME", raising=False)
+    monkeypatch.delenv("AGENTS_BROWSER_SESSION", raising=False)
+    monkeypatch.delenv("AGENTS_WORKSPACE", raising=False)
+
+    # Default resolves under <host>/browser/sessions/default
+    c0 = CDPClient()
+    assert c0.user_data_dir == host / "browser" / "sessions" / "default"
+
+    # AGENTS_BROWSER_PROFILE set to host/browser path (by Workspace.env) uses ws.browser_profile
+    (host / "workspaces" / "work").mkdir(parents=True)
+    (host / "workspaces" / "work" / "workspace.json").write_text(
+        json.dumps({"id": "work", "browser_profile": "work-prof"}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AGENTS_WORKSPACE", "work")
+    monkeypatch.setenv("AGENTS_BROWSER_PROFILE", str(host / "browser"))
+    c_ws = CDPClient()
+    assert c_ws.user_data_dir == host / "browser" / "sessions" / "work-prof"
+
+    # Legacy <host>/browser/Default fallback when sessions/default does not exist
+    host_leg = tmp_path / "host_leg"
+    monkeypatch.setenv("AGENTS_HOST_DIR", str(host_leg))
+    monkeypatch.delenv("AGENTS_WORKSPACE", raising=False)
+    monkeypatch.delenv("AGENTS_BROWSER_PROFILE", raising=False)
+    legacy = host_leg / "browser" / "Default"
+    legacy.mkdir(parents=True)
+    with warnings.catch_warnings(record=True) as seen:
+        warnings.simplefilter("always")
+        c_leg = CDPClient(session="default")
+    assert c_leg.user_data_dir == legacy
+    assert any(issubclass(w.category, DeprecationWarning) for w in seen)
+    monkeypatch.setenv("AGENTS_HOST_DIR", str(host))
+
+    # Warning when explicit user_data_dir escapes browser_home()
+    outside = tmp_path / "outside-profile"
+    with warnings.catch_warnings(record=True) as seen:
+        warnings.simplefilter("always")
+        CDPClient(user_data_dir=str(outside))
+    assert any(
+        issubclass(w.category, UserWarning) and "outside browser_home()" in str(w.message)
+        for w in seen
+    )
+
+    # Standalone fallback without agents_workspace
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "agents_workspace" or name.startswith("agents_workspace."):
+            raise ImportError("no agents_workspace")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    c_standalone = CDPClient()
+    assert c_standalone.user_data_dir == host / "browser" / "sessions" / "default"
+
+
 def test_managed_browser_candidates(monkeypatch, tmp_path):
     from agents_browser import cdp
     base = tmp_path / "browser"
