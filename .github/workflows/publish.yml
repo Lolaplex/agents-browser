@@ -1,0 +1,165 @@
+name: Release
+
+# A merge to main is a release. The version in pyproject.toml decides what
+# ships: when that version is already on PyPI the job is a no-op, so merging a
+# change that does not bump the version is harmless.
+#
+# PyPI publishing uses Trusted Publishing (OIDC), so no token is stored here.
+# One-time setup per project on pypi.org:
+#   Publishing -> Add a new pending publisher -> GitHub
+#   owner: Lolaplex, repository: <this repo>, workflow: publish.yml
+# If a project has no trusted publisher, add a PYPI_API_TOKEN secret and pass
+# `password: ${{ secrets.PYPI_API_TOKEN }}` to the publish step instead.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build, tag and publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write      # tag and GitHub release
+      id-token: write      # PyPI trusted publishing
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Read name and version from pyproject.toml
+        id: meta
+        run: |
+          python -c "import pathlib,tomllib;p=tomllib.loads(pathlib.Path('pyproject.toml').read_text(encoding='utf-8'))['project'];print('name='+p['name']);print('version='+p['version']);print('tag=v'+p['version'])" >> "$GITHUB_OUTPUT"
+
+      - name: Is this version already on PyPI?
+        id: check
+        run: |
+          url="https://pypi.org/pypi/${{ steps.meta.outputs.name }}/${{ steps.meta.outputs.version }}/json"
+          if curl -fsS -o /dev/null "$url"; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::${{ steps.meta.outputs.name }} ${{ steps.meta.outputs.version }} is already on PyPI. Nothing to publish."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install build tools
+        if: steps.check.outputs.exists == 'false'
+        run: python -m pip install --upgrade pip build twine packaging
+
+      # On dev the stack comes from git or editable checkouts, so a floor that
+      # points at an unreleased version is never exercised. At release time that
+      # floor makes `pip install <package>` unsatisfiable, so refuse to upload.
+      - name: Dependency floors resolve against PyPI
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          python - <<'PY'
+          import json, subprocess, sys
+          try:
+              import tomllib
+          except ModuleNotFoundError:  # Python 3.10
+              import tomli as tomllib
+          from packaging.requirements import Requirement
+          from packaging.version import Version
+
+          project = tomllib.loads(open("pyproject.toml", encoding="utf-8").read())["project"]
+          self_name = project["name"].lower().replace("_", "-")
+          specs = list(project.get("dependencies") or [])
+          for extra in (project.get("optional-dependencies") or {}).values():
+              specs.extend(extra)
+
+          problems = []
+          for spec in specs:
+              req = Requirement(spec)
+              name = req.name.lower().replace("_", "-")
+              if name == self_name:
+                  continue
+              if req.url:
+                  problems.append(f"{spec}: direct URL reference in published metadata")
+                  continue
+              try:
+                  result = subprocess.run(
+                      ["curl", "-fsS", f"https://pypi.org/pypi/{name}/json"],
+                      capture_output=True,
+                      text=True,
+                      timeout=20,
+                      check=True,
+                  )
+                  have = [Version(v) for v in json.loads(result.stdout)["releases"]]
+              except Exception:
+                  problems.append(f"{spec}: {req.name} is not on PyPI")
+                  continue
+              if not any(req.specifier.contains(v, prereleases=True) for v in have):
+                  problems.append(f"{spec}: no published {req.name} satisfies {req.specifier}")
+
+          if problems:
+              print("Dependency floors do not resolve against PyPI:", file=sys.stderr)
+              for problem in problems:
+                  print(f"  - {problem}", file=sys.stderr)
+              print("Release the dependency first, or lower the floor to a published version.", file=sys.stderr)
+              sys.exit(1)
+          print(f"Dependency floors resolve against PyPI ({len(specs)} requirements).")
+          PY
+
+      - name: Build
+        if: steps.check.outputs.exists == 'false'
+        run: python -m build
+
+      - name: Check metadata
+        if: steps.check.outputs.exists == 'false'
+        run: python -m twine check dist/*
+
+      - name: Publish to PyPI
+        if: steps.check.outputs.exists == 'false'
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+      - name: Tag and create the GitHub release
+        if: steps.check.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if git rev-parse -q --verify "refs/tags/${{ steps.meta.outputs.tag }}" >/dev/null; then
+            echo "::notice::tag ${{ steps.meta.outputs.tag }} already exists"
+          else
+            gh release create "${{ steps.meta.outputs.tag }}" --target "${{ github.sha }}" --title "${{ steps.meta.outputs.tag }}" --generate-notes
+          fi
+
+      - name: Notify release
+        if: success() && steps.check.outputs.exists == 'false'
+        continue-on-error: true
+        env:
+          RELEASE_WEBHOOK_URL: ${{ secrets.RELEASE_WEBHOOK_URL }}
+          PKG: ${{ steps.meta.outputs.name }}
+          VER: ${{ steps.meta.outputs.version }}
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          if [ -z "$RELEASE_WEBHOOK_URL" ]; then
+            echo "::warning::RELEASE_WEBHOOK_URL unset; skip notification"
+            exit 0
+          fi
+          PAYLOAD=$(python3 -c "import json, os; repo=os.environ['GITHUB_REPOSITORY']; server=os.environ['GITHUB_SERVER_URL']; repo_url=f'{server}/{repo}'; pkg=os.environ['PKG']; ver=os.environ['VER']; tag=os.environ['TAG']; run_url=f'{server}/{repo}/actions/runs/{os.environ[\"GITHUB_RUN_ID\"]}'; release_url=f'{server}/{repo}/releases/tag/{tag}'; pypi_url=f'https://pypi.org/project/{pkg}/{ver}/'; print(json.dumps({'embeds':[{'title':f'🚀 Release {tag} Published! — {repo}','url':release_url,'description':f'[{pkg} {ver} on PyPI]({pypi_url}) · [View run]({run_url}) · [Repository]({repo_url})','color':5763719}]}))")
+          curl -fsS -X POST -H 'Content-Type: application/json' -d "$PAYLOAD" "$RELEASE_WEBHOOK_URL"
+
+      - name: Notify failure
+        if: failure()
+        continue-on-error: true
+        env:
+          CI_WEBHOOK_URL: ${{ secrets.CI_WEBHOOK_URL }}
+        run: |
+          if [ -z "$CI_WEBHOOK_URL" ]; then
+            echo "::warning::CI_WEBHOOK_URL unset; skip notification"
+            exit 0
+          fi
+          PAYLOAD=$(python3 -c "import json, os; repo=os.environ['GITHUB_REPOSITORY']; server=os.environ['GITHUB_SERVER_URL']; repo_url=f'{server}/{repo}'; run_url=f'{server}/{repo}/actions/runs/{os.environ[\"GITHUB_RUN_ID\"]}'; print(json.dumps({'embeds':[{'title':f'🔴 Publish Failure: {repo}','url':run_url,'description':f'[View run]({run_url}) · [Repository]({repo_url})','color':15158332}]}))")
+          curl -fsS -X POST -H 'Content-Type: application/json' -d "$PAYLOAD" "$CI_WEBHOOK_URL"

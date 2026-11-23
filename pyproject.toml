@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agents-browser"
-version = "0.46.0"
+version = "0.47.0"
 description = "Ultra-fast, zero-bloat Minimal CDP Browser MCP in Python for AI coding agents"
 readme = "README.md"
 license = "MIT"
@@ -14,7 +14,7 @@ requires-python = ">=3.10"
 dependencies = [
     "mcp>=1.0.0,<2",
     "websockets>=12.0",
-    "agents-workspace>=0.1.0,<1",
+    "agents-workspace>=0.2.0,<1",
 ]
 keywords = ["mcp", "browser", "cdp", "chrome", "devtools", "agents", "coding-assistant", "scraper", "search"]
 classifiers = [
