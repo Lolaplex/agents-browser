@@ -4,7 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
-__version__ = "0.47.0"
+from importlib.metadata import PackageNotFoundError as _PackageNotFoundError
+from importlib.metadata import version as _version
+
+try:
+    __version__ = _version("agents-browser")
+except _PackageNotFoundError:  # a source checkout that was never installed
+    __version__ = "0.0.0+source"
 
 __all__ = ["CDPClient", "mcp", "__version__"]
 
