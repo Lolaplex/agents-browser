@@ -28,3 +28,36 @@ def test_help_json_shape():
     assert "extract-pdf" in data["commands"]
     assert "--help-json" in data["flags"]
     json.dumps(data)
+
+
+def test_file_writing_commands_are_mutating():
+    commands = mod.help_json()["commands"]
+    for name in ("screenshot", "extract-pdf", "record", "fetch"):
+        assert commands[name]["side_effects"] == "mutating", name
+
+
+def test_every_command_declares_side_effects():
+    commands = mod.help_json()["commands"]
+    for name, spec in commands.items():
+        assert spec["side_effects"] in ("read-only", "mutating"), name
+
+
+def test_cdp_commands_are_host_local():
+    commands = mod.help_json()["commands"]
+    for name in ("open", "click", "type", "screenshot", "record", "eval", "fetch"):
+        assert commands[name]["host_local"] is True, name
+    for name in ("serve", "skills", "read-url"):
+        assert "host_local" not in commands[name], name
+
+
+def test_help_json_subprocess(tmp_path=None):
+    import subprocess
+    proc = subprocess.run(
+        [sys.executable, "-m", "agents_browser", "--help-json"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert proc.returncode == 0, proc.stderr
+    parsed = json.loads(proc.stdout)
+    assert isinstance(parsed["commands"], dict)
