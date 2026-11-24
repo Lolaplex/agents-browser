@@ -63,8 +63,9 @@ def test_help_json_cli_parity():
     from agents_browser.help_json import help_json
     spec = help_json()
     cmds = spec["commands"]
+    # init/sync/install are setup commands: CLI subparsers only, never cordis_expose'd
     expected = [
-        "serve", "init", "sync", "install", "skills", "open", "system-open", "headless", "close",
+        "serve", "skills", "open", "system-open", "headless", "close",
         "snapshot", "click", "type", "fill", "select", "scroll", "back", "reload",
         "wait", "find", "tabs", "switch-tab", "search", "read", "scrape", "screenshot",
         "download", "fetch", "extract-pdf", "audit", "inspect", "styles", "layout",

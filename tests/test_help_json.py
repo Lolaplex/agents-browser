@@ -44,13 +44,37 @@ def test_every_command_declares_side_effects():
 
 def test_cdp_commands_are_host_local():
     commands = mod.help_json()["commands"]
-    for name in ("open", "click", "type", "screenshot", "record", "eval", "fetch"):
+    for name in ("open", "click", "type", "screenshot", "record", "eval", "fetch", "serve"):
         assert commands[name]["host_local"] is True, name
-    for name in ("serve", "skills", "read-url"):
+    for name in ("skills", "read-url"):
         assert "host_local" not in commands[name], name
 
 
-def test_help_json_subprocess(tmp_path=None):
+def test_setup_commands_hidden_from_expose():
+    commands = mod.help_json()["commands"]
+    for name in ("init", "sync", "install"):
+        assert name not in commands, name
+
+
+def test_serve_is_mutating_host_local():
+    serve = mod.help_json()["commands"]["serve"]
+    assert serve["side_effects"] == "mutating"
+    assert serve["host_local"] is True
+
+
+def test_hidden_setup_subparsers_still_parse():
+    import subprocess
+    for name in ("init", "sync", "install"):
+        proc = subprocess.run(
+            [sys.executable, "-m", "agents_browser", name, "--help"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert proc.returncode == 0, (name, proc.stderr)
+
+
+def test_help_json_subprocess():
     import subprocess
     proc = subprocess.run(
         [sys.executable, "-m", "agents_browser", "--help-json"],
