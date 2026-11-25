@@ -22,8 +22,22 @@ def _version() -> str:
         return "0.0.0"
 
 
+# Commands that drive this host's managed browser, browser profile, desktop
+# browser, or filesystem — the harness session gate binds these to the host.
+_HOST_LOCAL = frozenset(
+    {
+        "open", "system-open", "headless", "close", "snapshot", "click",
+        "type", "fill", "select", "scroll", "back", "reload", "wait",
+        "find", "tabs", "switch-tab", "search", "read", "scrape",
+        "screenshot", "download", "fetch", "extract-pdf", "audit",
+        "inspect", "styles", "layout", "logs", "viewport", "eval",
+        "record", "serve",
+    }
+)
+
+
 def help_json() -> dict[str, Any]:
-    return {
+    doc = {
         "name": "agents-browser",
         "version": _version(),
         "cordis_expose": True,
@@ -32,28 +46,7 @@ def help_json() -> dict[str, Any]:
             "serve": {
                 "usage": "agents-browser serve",
                 "description": "Run the FastMCP server over stdio (default)",
-                "side_effects": "read-only",
-            },
-            "init": {
-                "usage": "agents-browser init",
-                "description": "Plug & Play setup: auto-configure MCP in host IDEs and sync skills",
                 "side_effects": "mutating",
-            },
-            "sync": {
-                "usage": "agents-browser sync [--init]",
-                "description": "Auto-configure MCP server across host IDEs and sync skills",
-                "side_effects": "mutating",
-            },
-            "install": {
-                "usage": "agents-browser install [--full]",
-                "description": "Download Chrome for Testing chrome-headless-shell (~100MB) for hosts without a browser",
-                "side_effects": "mutating",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "full": {"type": "boolean", "description": "Download full chrome binary (visible window capable)"},
-                    },
-                },
             },
             "skills": {
                 "usage": "agents-browser skills [NAME]",
@@ -297,8 +290,8 @@ def help_json() -> dict[str, Any]:
             },
             "screenshot": {
                 "usage": "agents-browser screenshot [PATH] [--out PATH] [--full-page]",
-                "description": "Capture a PNG screenshot of the current page",
-                "side_effects": "read-only",
+                "description": "Capture a PNG screenshot of the current page (always writes a file)",
+                "side_effects": "mutating",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -322,8 +315,8 @@ def help_json() -> dict[str, Any]:
             },
             "fetch": {
                 "usage": "agents-browser fetch URL [--method METHOD] [--headers JSON] [--data JSON]",
-                "description": "Fast HTTP/JSON request using browser cookies without DOM rendering",
-                "side_effects": "read-only",
+                "description": "Fast HTTP/JSON request using browser cookies without DOM rendering (non-GET methods mutate remote state)",
+                "side_effects": "mutating",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -337,8 +330,8 @@ def help_json() -> dict[str, Any]:
             },
             "extract-pdf": {
                 "usage": "agents-browser extract-pdf [TARGET] [--out PATH] [--max-pages N]",
-                "description": "Directly extract PDF streams, convert pages via Page.printToPDF or extract PDF Viewer blobs",
-                "side_effects": "read-only",
+                "description": "Directly extract PDF streams, convert pages via Page.printToPDF or extract PDF Viewer blobs (always writes a file)",
+                "side_effects": "mutating",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -430,8 +423,8 @@ def help_json() -> dict[str, Any]:
             },
             "record": {
                 "usage": "agents-browser record [--duration SEC] [--fps FPS] [--out PATH]",
-                "description": "Record screen activity to MP4 video or GIF",
-                "side_effects": "read-only",
+                "description": "Record screen activity to MP4 video or GIF (always writes a file)",
+                "side_effects": "mutating",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -452,3 +445,8 @@ def help_json() -> dict[str, Any]:
             "BROWSER_PATH",
         ],
     }
+    for name in _HOST_LOCAL:
+        spec = doc["commands"].get(name)
+        if isinstance(spec, dict):
+            spec["host_local"] = True
+    return doc
